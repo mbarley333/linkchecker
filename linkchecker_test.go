@@ -19,7 +19,7 @@ func TestNotFound(t *testing.T) {
 
 	}))
 
-	client, err := linkchecker.NewClient()
+	client, err := linkchecker.NewLinkChecker()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestWorkingLink(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
-	client, err := linkchecker.NewClient()
+	client, err := linkchecker.NewLinkChecker()
 	if err != nil {
 		t.Fatal(err)
 	}

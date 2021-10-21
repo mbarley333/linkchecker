@@ -11,23 +11,23 @@ type Result struct {
 	Url          string
 }
 
-type Client struct {
+type LinkChecker struct {
 	Base       string
 	HTTPClient *http.Client
 }
 
-func NewClient() (Client, error) {
+func NewLinkChecker() (LinkChecker, error) {
 
-	c := Client{
+	l := LinkChecker{
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
-	return c, nil
+	return l, nil
 }
 
-func (c Client) Get(url string) (Result, error) {
+func (l LinkChecker) Get(url string) (Result, error) {
 
-	resp, err := c.HTTPClient.Get(url)
+	resp, err := l.HTTPClient.Get(url)
 	if err != nil {
 		return Result{}, fmt.Errorf("unable to perform get on %s,%s", url, err)
 	}
