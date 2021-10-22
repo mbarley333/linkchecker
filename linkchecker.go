@@ -2,9 +2,12 @@ package linkchecker
 
 import (
 	"fmt"
+	"io"
 	"net/http"
-	"net/url"
+	"sync"
 	"time"
+
+	"github.com/antchfx/htmlquery"
 )
 
 type Result struct {
@@ -13,8 +16,9 @@ type Result struct {
 }
 
 type LinkChecker struct {
-	Base       string
 	HTTPClient *http.Client
+	Wg         sync.WaitGroup
+	Results    []Result
 }
 
 func NewLinkChecker() (*LinkChecker, error) {
@@ -26,11 +30,50 @@ func NewLinkChecker() (*LinkChecker, error) {
 	return l, nil
 }
 
-func (l LinkChecker) Get(url string) (Result, error) {
+func (l *LinkChecker) Check(sites []string) ([]Result, error) {
+
+	results := make(chan Result)
+	go l.ReceiveResultChannel(results)
+
+	// parse the site
+	for _, site := range sites {
+
+		subsites, err := l.Crawl(site)
+		if err != nil {
+			return nil, err
+		}
+		for _, subsite := range subsites {
+			l.Wg.Add(1)
+			go l.Get(subsite.URL, results)
+			l.Wg.Wait()
+		}
+
+	}
+
+	return l.Results, nil
+}
+
+func (l LinkChecker) Crawl(url string) ([]Site, error) {
+	resp, err := l.HTTPClient.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("unable to perform get on %s,%s", url, err)
+	}
+
+	defer resp.Body.Close()
+
+	sites, err := ParseBody(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	return sites, nil
+}
+
+func (l LinkChecker) Get(url string, results chan<- Result) {
 
 	resp, err := l.HTTPClient.Get(url)
 	if err != nil {
-		return Result{}, fmt.Errorf("unable to perform get on %s,%s", url, err)
+		fmt.Println(err)
 	}
 
 	defer resp.Body.Close()
@@ -40,31 +83,42 @@ func (l LinkChecker) Get(url string) (Result, error) {
 		ResponseCode: resp.StatusCode,
 	}
 
-	return result, nil
+	results <- result
 
 }
 
-func (l LinkChecker) Check(sites []string) ([]Result, error) {
+func (l *LinkChecker) ReceiveResultChannel(results <-chan Result) {
 
-	results := []Result{}
-	// parase the site
-	for _, site := range sites {
-
-		url, err := url.Parse(site)
-		if err != nil {
-			return []Result{}, err
-		}
-		if url.Scheme == "" || url.Host == "" {
-			return []Result{}, fmt.Errorf("invalid URL %q", url)
-		}
-
-		result, err := l.Get(site)
-		if err != nil {
-			return []Result{}, fmt.Errorf("unable to perform Get on %s, %s", site, err)
-		}
-		results = append(results, result)
+	for result := range results {
+		l.Results = append(l.Results, result)
+		l.Wg.Done()
 
 	}
 
-	return results, nil
+}
+
+type Site struct {
+	URL string
+}
+
+func ParseBody(body io.Reader) ([]Site, error) {
+
+	sites := []Site{}
+	doc, err := htmlquery.Parse(body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to parse body, check if a valid io.Reader is being sent, %s", err)
+	}
+
+	list := htmlquery.Find(doc, "//a[@href]")
+
+	for _, n := range list {
+		site := Site{
+			URL: htmlquery.SelectAttr(n, "href"),
+		}
+		sites = append(sites, site)
+
+	}
+	fmt.Println(list)
+
+	return sites, nil
 }
