@@ -3,6 +3,7 @@ package linkchecker
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -16,9 +17,9 @@ type LinkChecker struct {
 	HTTPClient *http.Client
 }
 
-func NewLinkChecker() (LinkChecker, error) {
+func NewLinkChecker() (*LinkChecker, error) {
 
-	l := LinkChecker{
+	l := &LinkChecker{
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
@@ -41,4 +42,29 @@ func (l LinkChecker) Get(url string) (Result, error) {
 
 	return result, nil
 
+}
+
+func (l LinkChecker) Check(sites []string) ([]Result, error) {
+
+	results := []Result{}
+	// parase the site
+	for _, site := range sites {
+
+		url, err := url.Parse(site)
+		if err != nil {
+			return []Result{}, err
+		}
+		if url.Scheme == "" || url.Host == "" {
+			return []Result{}, fmt.Errorf("invalid URL %q", url)
+		}
+
+		result, err := l.Get(site)
+		if err != nil {
+			return []Result{}, fmt.Errorf("unable to perform Get on %s, %s", site, err)
+		}
+		results = append(results, result)
+
+	}
+
+	return results, nil
 }
