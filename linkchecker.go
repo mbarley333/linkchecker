@@ -42,14 +42,18 @@ func (l *LinkChecker) Check(sites []string) ([]Result, error) {
 		if err != nil {
 			return nil, err
 		}
+
 		for _, subsite := range subsites {
+			// add to wait group
 			l.Wg.Add(1)
 			go l.Get(subsite.URL, results)
-			l.Wg.Wait()
+
 		}
 
 	}
 
+	// block here until all wait groups handled
+	l.Wg.Wait()
 	return l.Results, nil
 }
 
@@ -109,7 +113,7 @@ func ParseBody(body io.Reader) ([]Site, error) {
 		return nil, fmt.Errorf("unable to parse body, check if a valid io.Reader is being sent, %s", err)
 	}
 
-	list := htmlquery.Find(doc, "//a[@href]")
+	list := htmlquery.Find(doc, "//a/@href")
 
 	for _, n := range list {
 		site := Site{
@@ -118,7 +122,6 @@ func ParseBody(body io.Reader) ([]Site, error) {
 		sites = append(sites, site)
 
 	}
-	fmt.Println(list)
 
 	return sites, nil
 }
