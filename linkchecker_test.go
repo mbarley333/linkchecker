@@ -162,6 +162,7 @@ func TestParseBody(t *testing.T) {
 	l.HTTPClient = ts.Client()
 
 	resp, err := l.HTTPClient.Get(url)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +171,7 @@ func TestParseBody(t *testing.T) {
 	want := []linkchecker.Site{
 		{URL: "http://127.0.0.1"},
 	}
-	got, err := linkchecker.ParseBody(resp.Body)
+	got, err := l.ParseBody(resp.Body)
 	if err != nil {
 		t.Fatal(err)
 	}

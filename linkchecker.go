@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +24,8 @@ type LinkChecker struct {
 	Wg         sync.WaitGroup
 	Results    []Result
 	output     io.Writer
+	Scheme     string
+	Domain     string
 }
 
 type Option func(*LinkChecker) error
@@ -52,8 +56,19 @@ func (l *LinkChecker) Check(sites []string) ([]Result, error) {
 	results := make(chan Result)
 	go l.ReceiveResultChannel(results)
 
-	// parse the site
 	for _, site := range sites {
+
+		// get details from url
+		url, err := url.Parse(site)
+		if err != nil {
+			return nil, err
+		}
+		if url.Scheme == "" || url.Host == "" {
+			return nil, fmt.Errorf("invalid URL %q", url)
+		}
+
+		// needed for href w/o https://... used in ParseBody
+		l.Scheme, l.Domain = url.Scheme, url.Host
 
 		subsites, err := l.Crawl(site)
 		if err != nil {
@@ -75,6 +90,7 @@ func (l *LinkChecker) Check(sites []string) ([]Result, error) {
 }
 
 func (l LinkChecker) Crawl(url string) ([]Site, error) {
+
 	resp, err := l.HTTPClient.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("unable to perform get on %s,%s", url, err)
@@ -82,7 +98,7 @@ func (l LinkChecker) Crawl(url string) ([]Site, error) {
 
 	defer resp.Body.Close()
 
-	sites, err := ParseBody(resp.Body)
+	sites, err := l.ParseBody(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +138,7 @@ type Site struct {
 	URL string
 }
 
-func ParseBody(body io.Reader) ([]Site, error) {
+func (l LinkChecker) ParseBody(body io.Reader) ([]Site, error) {
 
 	sites := []Site{}
 	doc, err := htmlquery.Parse(body)
@@ -133,11 +149,26 @@ func ParseBody(body io.Reader) ([]Site, error) {
 	list := htmlquery.Find(doc, "//a/@href")
 
 	for _, n := range list {
-		url := htmlquery.InnerText(n)
-		site := Site{
-			URL: url, //htmlquery.SelectAttr(n, "href"),
+		href := htmlquery.InnerText(n)
+
+		switch {
+		case strings.HasPrefix(href, "/"):
+			url := fmt.Sprintf("%s://%s%s", l.Scheme, l.Domain, href)
+			site := Site{
+				URL: url,
+			}
+			sites = append(sites, site)
+		case strings.HasPrefix(href, "https://"):
+			site := Site{
+				URL: href,
+			}
+			sites = append(sites, site)
+		case strings.HasPrefix(href, "http://"):
+			site := Site{
+				URL: href,
+			}
+			sites = append(sites, site)
 		}
-		sites = append(sites, site)
 
 	}
 
