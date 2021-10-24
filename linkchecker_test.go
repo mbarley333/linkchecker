@@ -207,6 +207,8 @@ func TestReceiverChannel(t *testing.T) {
 
 	results <- result
 
+	l.Wg.Wait()
+
 	want := []linkchecker.Result{
 		{
 			ResponseCode: http.StatusNotFound,

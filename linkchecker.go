@@ -1,9 +1,11 @@
 package linkchecker
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -19,15 +21,30 @@ type LinkChecker struct {
 	HTTPClient *http.Client
 	Wg         sync.WaitGroup
 	Results    []Result
+	output     io.Writer
 }
 
-func NewLinkChecker() (*LinkChecker, error) {
+type Option func(*LinkChecker) error
 
-	l := &LinkChecker{
+func WithOutput(output io.Writer) Option {
+	return func(l *LinkChecker) error {
+		l.output = output
+		return nil
+	}
+}
+
+func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
+
+	linkchecker := &LinkChecker{
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
+		output:     os.Stdout,
 	}
 
-	return l, nil
+	for _, o := range opts {
+		o(linkchecker)
+	}
+
+	return linkchecker, nil
 }
 
 func (l *LinkChecker) Check(sites []string) ([]Result, error) {
@@ -124,4 +141,51 @@ func ParseBody(body io.Reader) ([]Site, error) {
 	}
 
 	return sites, nil
+}
+
+// CLI
+
+func RunCLI() error {
+
+	flagSet := flag.NewFlagSet("flags", flag.ExitOnError)
+	flagSet.Usage = help
+
+	flagSet.Parse(os.Args[1:])
+	if flagSet.NArg() < 1 {
+		fmt.Println("Please list site(s) to link check (e.g. ./linkchecker https://bitfieldconsulting.com)")
+		os.Exit(1)
+	}
+	sites := flagSet.Args()
+
+	flag.Parse()
+
+	l, err := NewLinkChecker()
+	if err != nil {
+		return err
+	}
+
+	results, err := l.Check(sites)
+	if err != nil {
+		return err
+	}
+
+	for _, result := range results {
+		fmt.Fprintln(l.output, result)
+	}
+
+	return nil
+
+}
+
+func help() {
+	fmt.Fprintln(os.Stderr, `
+	Description:
+	  linkchecker will crawl a site and return the status of each link on the site
+	
+	Parameters:
+	  None
+	
+	Usage:
+	./linkchecker https://bitfieldconsulting.com
+	`)
 }
