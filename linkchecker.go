@@ -17,6 +17,7 @@ import (
 type Result struct {
 	ResponseCode int
 	Url          string
+	Error        error
 }
 
 type LinkChecker struct {
@@ -111,9 +112,20 @@ func (l LinkChecker) Get(url string, results chan<- Result) {
 	// get is too heavy...need something to just
 	// get headers to avoid the timeout error from espn.com
 
+	_, err := l.IsHeaderAvailable(url)
+	if err != nil {
+		result := Result{
+			Url:   url,
+			Error: err,
+		}
+		results <- result
+		return
+
+	}
+
 	resp, err := l.HTTPClient.Get(url)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(l.output, err)
 	}
 
 	defer resp.Body.Close()
@@ -122,7 +134,6 @@ func (l LinkChecker) Get(url string, results chan<- Result) {
 		Url:          url,
 		ResponseCode: resp.StatusCode,
 	}
-
 	results <- result
 
 }
@@ -176,6 +187,20 @@ func (l LinkChecker) ParseBody(body io.Reader) ([]Site, error) {
 	}
 
 	return sites, nil
+}
+
+func (l LinkChecker) IsHeaderAvailable(url string) (bool, error) {
+	req, err := http.NewRequest(http.MethodHead, url, nil)
+	if err != nil {
+		return false, err
+	}
+	_, err = l.HTTPClient.Do(req)
+
+	if err != nil {
+		return false, err
+	}
+
+	return true, nil
 }
 
 // CLI

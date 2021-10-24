@@ -224,3 +224,32 @@ func TestReceiverChannel(t *testing.T) {
 	}
 
 }
+
+func TestIsHeaderAvailable(t *testing.T) {
+	t.Parallel()
+
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		w.WriteHeader(http.StatusOK)
+
+	}))
+
+	url := ts.URL
+
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.HTTPClient = ts.Client()
+
+	isHeader, _ := l.IsHeaderAvailable(url)
+
+	want := true
+	got := isHeader
+
+	if want != got {
+		t.Fatalf("wanted: %v, got: %v", want, got)
+	}
+
+}
