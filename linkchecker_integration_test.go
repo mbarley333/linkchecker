@@ -13,7 +13,8 @@ import (
 func TestIntegrationCheck(t *testing.T) {
 
 	sites := []string{
-		"https://bitfieldconsulting.com",
+		"https://bitfieldconsulting.com", //href w/o schema and domain
+		//"https://espn.com", //Get "https://www.tsn.ca/cfl": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
 	}
 
 	l, err := linkchecker.NewLinkChecker()

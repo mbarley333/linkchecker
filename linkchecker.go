@@ -108,6 +108,9 @@ func (l LinkChecker) Crawl(url string) ([]Site, error) {
 
 func (l LinkChecker) Get(url string, results chan<- Result) {
 
+	// get is too heavy...need something to just
+	// get headers to avoid the timeout error from espn.com
+
 	resp, err := l.HTTPClient.Get(url)
 	if err != nil {
 		fmt.Println(err)
@@ -218,6 +221,6 @@ func help() {
 	  None
 	
 	Usage:
-	./linkchecker https://bitfieldconsulting.com
+	./linkchecker https://google.com
 	`)
 }
