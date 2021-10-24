@@ -133,8 +133,9 @@ func ParseBody(body io.Reader) ([]Site, error) {
 	list := htmlquery.Find(doc, "//a/@href")
 
 	for _, n := range list {
+		url := htmlquery.InnerText(n)
 		site := Site{
-			URL: htmlquery.SelectAttr(n, "href"),
+			URL: url, //htmlquery.SelectAttr(n, "href"),
 		}
 		sites = append(sites, site)
 

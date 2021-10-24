@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"linkchecker"
 	"os"
 )
@@ -8,6 +9,7 @@ import (
 func main() {
 	err := linkchecker.RunCLI()
 	if err != nil {
+		fmt.Println(err)
 		os.Exit(1)
 	}
 
