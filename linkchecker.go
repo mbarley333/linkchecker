@@ -111,7 +111,6 @@ func (l LinkChecker) Get(url string, results chan<- Result) {
 
 	// get is too heavy...need something to just
 	// get headers to avoid the timeout error from espn.com
-
 	_, err := l.IsHeaderAvailable(url)
 	if err != nil {
 		result := Result{
