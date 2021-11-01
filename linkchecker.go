@@ -23,9 +23,10 @@ type Result struct {
 }
 
 type LinkChecker struct {
-	HTTPClient  *http.Client
-	Wg          sync.WaitGroup
-	Results     []Result
+	HTTPClient *http.Client
+	Wg         sync.WaitGroup
+	Results    []Result
+	//Results     chan Result
 	output      io.Writer
 	errorLog    io.Writer
 	Scheme      string
@@ -67,7 +68,9 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 
 //func (l *LinkChecker) Check(site string) ([]Result, error)  {
 func (l *LinkChecker) Check(site string) (<-chan Result, error) {
-	results := make(chan Result)
+	//func (l *LinkChecker) Check(site string) error {
+
+	results := make(chan Result, 5)
 	//go l.ReceiveResultChannel(results)
 
 	url, err := url.Parse(site)
@@ -90,7 +93,8 @@ func (l *LinkChecker) Check(site string) (<-chan Result, error) {
 	l.Wg.Wait()
 
 	return results, nil
-	//return l.Results, nil
+	//return nil
+
 }
 
 func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Result, already *AlreadyCrawled) {
@@ -130,14 +134,12 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 			//fmt.Println(subsite)
 			if !already.IsCrawled(subsite) {
 				already.AddSite(subsite)
-				l.Wg.Add(1)
-				go l.Crawl(subsite, site, results, already)
 
+				go l.Crawl(subsite, site, results, already)
 			}
 		}
 
 	}
-
 	fmt.Println(result)
 	results <- result
 
@@ -165,15 +167,15 @@ func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (l *LinkChecker) ReceiveResultChannel(results <-chan Result) {
+// func (l *LinkChecker) ReceiveResultChannel(results <-chan Result) {
 
-	for result := range results {
-		l.Results = append(l.Results, result)
-		l.Wg.Done()
+// 	for result := range results {
+// 		l.Results = append(l.Results, result)
+// 		l.Wg.Done()
 
-	}
+// 	}
 
-}
+// }
 
 func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 
@@ -339,7 +341,7 @@ func RunCLI() {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	for _, result := range results {
+	for result := range results {
 		fmt.Fprintln(l.output, result)
 	}
 
