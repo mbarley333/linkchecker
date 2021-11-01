@@ -227,6 +227,11 @@ func TestCheck(t *testing.T) {
 			ReferringSite: ts.URL,
 		},
 		{
+			ResponseCode:  http.StatusNotFound,
+			Url:           ts.URL + "/zzz",
+			ReferringSite: ts.URL + "/about",
+		},
+		{
 			ResponseCode:  http.StatusOK,
 			Url:           ts.URL + "/home",
 			ReferringSite: ts.URL + "/about",

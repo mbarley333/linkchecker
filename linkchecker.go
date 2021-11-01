@@ -65,10 +65,10 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 	return linkchecker, nil
 }
 
-func (l *LinkChecker) Check(site string) ([]Result, error) {
-
+//func (l *LinkChecker) Check(site string) ([]Result, error)  {
+func (l *LinkChecker) Check(site string) (<-chan Result, error) {
 	results := make(chan Result)
-	go l.ReceiveResultChannel(results)
+	//go l.ReceiveResultChannel(results)
 
 	url, err := url.Parse(site)
 	if err != nil {
@@ -89,7 +89,8 @@ func (l *LinkChecker) Check(site string) ([]Result, error) {
 	go l.Crawl(canonicalSite, canonicalSite, results, already)
 	l.Wg.Wait()
 
-	return l.Results, nil
+	return results, nil
+	//return l.Results, nil
 }
 
 func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Result, already *AlreadyCrawled) {
@@ -126,18 +127,14 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 		}
 
 		for _, subsite := range sites {
+			//fmt.Println(subsite)
 			if !already.IsCrawled(subsite) {
-				already.AddSite(site)
+				already.AddSite(subsite)
 				l.Wg.Add(1)
 				go l.Crawl(subsite, site, results, already)
+
 			}
 		}
-
-		// if !already.IsCrawled(sites[0]) {
-		// 	already.AddSite(sites[0])
-		// 	l.Wg.Add(1)
-		// 	go l.Crawl(sites[0], site, results, already)
-		// }
 
 	}
 
