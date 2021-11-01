@@ -25,8 +25,8 @@ type Result struct {
 type LinkChecker struct {
 	HTTPClient *http.Client
 	Wg         sync.WaitGroup
-	Results    []Result
-	//Results     chan Result
+	//Results    []Result
+	Results     chan Result
 	output      io.Writer
 	errorLog    io.Writer
 	Scheme      string
@@ -57,6 +57,7 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
 		Ratelimiter: rate.NewLimiter(2, 4),
+		Results:     make(chan Result, 10),
 	}
 
 	for _, o := range opts {
@@ -66,43 +67,34 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 	return linkchecker, nil
 }
 
-//func (l *LinkChecker) Check(site string) ([]Result, error)  {
-func (l *LinkChecker) Check(site string) (<-chan Result, error) {
-	//func (l *LinkChecker) Check(site string) error {
-
-	results := make(chan Result, 5)
-	//go l.ReceiveResultChannel(results)
+func (l *LinkChecker) Check(site string) error {
 
 	url, err := url.Parse(site)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	l.Scheme, l.Domain = url.Scheme, url.Host
 
 	canonicalSite, err := l.CanonicaliseUrl(site)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	already := NewAlreadyCrawled()
 	already.AddSite(canonicalSite)
 
 	l.Wg.Add(1)
-	l.Crawl(canonicalSite, canonicalSite, results, already)
+	l.Crawl(canonicalSite, canonicalSite, l.Results, already)
 	l.Wg.Wait()
 
-	fmt.Print("aaaaaaaaq")
-	close(results)
+	close(l.Results)
 
-	return results, nil
+	return nil
 
 }
 
 func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Result, already *AlreadyCrawled) {
-
-	fmt.Println(site)
-	defer l.Wg.Done()
 
 	result := Result{
 		Url:           site,
@@ -127,6 +119,10 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 
 	}
 
+	//fmt.Println(result)
+	results <- result
+	l.Wg.Done()
+
 	if u.Host == l.Domain {
 
 		sites, err := l.ParseBody(resp.Body)
@@ -139,18 +135,14 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 
 			if !already.IsCrawled(subsite) {
 				already.AddSite(subsite)
-				//defer l.Wg.Done()
 				l.Wg.Add(1)
 				go l.Crawl(subsite, site, results, already)
-				l.Wg.Wait()
+				//l.Wg.Wait()
 
 			}
 		}
 
 	}
-
-	//fmt.Println(result)
-	results <- result
 
 }
 
@@ -174,16 +166,6 @@ func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
 	}
 
 	return resp, nil
-}
-
-func (l *LinkChecker) ReceiveResultChannel(results <-chan Result) {
-
-	for result := range results {
-		l.Results = append(l.Results, result)
-		l.Wg.Done()
-
-	}
-
 }
 
 func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
@@ -344,21 +326,26 @@ func RunCLI() {
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
-
-	results, err := l.Check(site)
-	if err != nil {
-		fmt.Fprintln(l.errorLog, err)
-	}
+	done := make(chan bool)
 
 	go func() {
-		for result := range results {
-			fmt.Fprintln(l.output, result)
+		for {
+			r, more := <-l.Results
+			if more {
+				fmt.Println("received result", r)
+			} else {
+				fmt.Println("received all jobs")
+				done <- true
+				return
+			}
 		}
 	}()
 
-	// for result := range results {
-	// 	fmt.Fprintln(l.output, result)
-	// }
+	err = l.Check(site)
+	if err != nil {
+		fmt.Fprintln(l.errorLog, err)
+	}
+	<-done
 
 }
 
