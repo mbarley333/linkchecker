@@ -4,18 +4,16 @@ package linkchecker_test
 
 import (
 	"linkchecker"
-	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"net/http"
+	"testing"
 )
 
 // initiated by go test -tags=integration
 func TestIntegrationCheck(t *testing.T) {
 
-	sites := []string{
-		//"https://bitfieldconsulting.com", //href w/o schema and domain, rate limiting
-		"https://espn.com", //Get "https://www.tsn.ca/cfl": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
-	}
+	site := "https://example.com"
 
 	l, err := linkchecker.NewLinkChecker()
 	if err != nil {
@@ -23,10 +21,20 @@ func TestIntegrationCheck(t *testing.T) {
 	}
 
 	want := []linkchecker.Result{
-		{ResponseCode: 200, Url: "https://bitfieldconsulting.com"},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           "https://example.com",
+			ReferringSite: "https://example.com",
+		},
+
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           "https://www.iana.org/domains/example",
+			ReferringSite: "https://example.com",
+		},
 	}
 
-	got, err := l.Check(sites)
+	got, err := l.Check(site)
 	if err != nil {
 		t.Fatal(err)
 	}
