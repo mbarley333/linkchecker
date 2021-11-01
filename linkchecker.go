@@ -89,15 +89,20 @@ func (l *LinkChecker) Check(site string) (<-chan Result, error) {
 	already.AddSite(canonicalSite)
 
 	l.Wg.Add(1)
-	go l.Crawl(canonicalSite, canonicalSite, results, already)
+	l.Crawl(canonicalSite, canonicalSite, results, already)
 	l.Wg.Wait()
 
+	fmt.Print("aaaaaaaaq")
+	close(results)
+
 	return results, nil
-	//return nil
 
 }
 
 func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Result, already *AlreadyCrawled) {
+
+	fmt.Println(site)
+	defer l.Wg.Done()
 
 	result := Result{
 		Url:           site,
@@ -131,16 +136,20 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 		}
 
 		for _, subsite := range sites {
-			//fmt.Println(subsite)
+
 			if !already.IsCrawled(subsite) {
 				already.AddSite(subsite)
-
+				//defer l.Wg.Done()
+				l.Wg.Add(1)
 				go l.Crawl(subsite, site, results, already)
+				l.Wg.Wait()
+
 			}
 		}
 
 	}
-	fmt.Println(result)
+
+	//fmt.Println(result)
 	results <- result
 
 }
@@ -167,15 +176,15 @@ func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
 	return resp, nil
 }
 
-// func (l *LinkChecker) ReceiveResultChannel(results <-chan Result) {
+func (l *LinkChecker) ReceiveResultChannel(results <-chan Result) {
 
-// 	for result := range results {
-// 		l.Results = append(l.Results, result)
-// 		l.Wg.Done()
+	for result := range results {
+		l.Results = append(l.Results, result)
+		l.Wg.Done()
 
-// 	}
+	}
 
-// }
+}
 
 func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 
@@ -341,9 +350,15 @@ func RunCLI() {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	for result := range results {
-		fmt.Fprintln(l.output, result)
-	}
+	go func() {
+		for result := range results {
+			fmt.Fprintln(l.output, result)
+		}
+	}()
+
+	// for result := range results {
+	// 	fmt.Fprintln(l.output, result)
+	// }
 
 }
 
