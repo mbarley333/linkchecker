@@ -345,6 +345,11 @@ func RemoveLeadingSlash(site string) string {
 // CLI
 func RunCLI() {
 
+	if len(os.Args) < 2 {
+		help()
+		os.Exit(0)
+	}
+
 	arg := os.Args[1:2]
 	if arg[0] == "help" {
 		help()
@@ -385,10 +390,7 @@ func help() {
 	Description:
 	  linkchecker will crawl a site and return the status of each link on the site
 	
-	Parameters:
-	  None
-	
 	Usage:
-	./linkchecker https://example.com
+	./linkchecker https://somewebpage.com
 	`)
 }
