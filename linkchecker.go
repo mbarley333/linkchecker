@@ -23,9 +23,8 @@ type Result struct {
 }
 
 type LinkChecker struct {
-	HTTPClient *http.Client
-	Wg         sync.WaitGroup
-	//Results    []Result
+	HTTPClient  *http.Client
+	Wg          sync.WaitGroup
 	Results     chan Result
 	output      io.Writer
 	errorLog    io.Writer
@@ -50,6 +49,20 @@ func WithErrorLog(errorLog io.Writer) Option {
 	}
 }
 
+func WithConfigureRatelimiter(ratePerSec rate.Limit, burst int) Option {
+	return func(l *LinkChecker) error {
+		l.Ratelimiter = rate.NewLimiter(ratePerSec, burst)
+		return nil
+	}
+}
+
+func WithBufferedChannelSize(size int) Option {
+	return func(l *LinkChecker) error {
+		l.Results = make(chan Result, size)
+		return nil
+	}
+}
+
 func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 
 	linkchecker := &LinkChecker{
@@ -57,7 +70,7 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
 		Ratelimiter: rate.NewLimiter(2, 4),
-		Results:     make(chan Result, 10),
+		Results:     make(chan Result, 50),
 	}
 
 	for _, o := range opts {
@@ -65,6 +78,25 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 	}
 
 	return linkchecker, nil
+}
+
+func CheckSiteLinks(site string, opts ...Option) <-chan Result {
+	l, err := NewLinkChecker()
+	for _, o := range opts {
+		o(l)
+	}
+
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "unable to create linkchecker struct, %s", err)
+	}
+
+	err = l.Check(site)
+	if err != nil {
+		fmt.Fprint(l.errorLog, err)
+	}
+
+	return l.Results
+
 }
 
 func (l *LinkChecker) Check(site string) error {
@@ -119,7 +151,6 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 
 	}
 
-	//fmt.Println(result)
 	results <- result
 	l.Wg.Done()
 
@@ -332,9 +363,9 @@ func RunCLI() {
 		for {
 			r, more := <-l.Results
 			if more {
-				fmt.Println("received result", r)
+				fmt.Println(r)
 			} else {
-				fmt.Println("received all jobs")
+				fmt.Println("received all results")
 				done <- true
 				return
 			}
