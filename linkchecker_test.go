@@ -2,13 +2,13 @@ package linkchecker_test
 
 import (
 	"fmt"
-	"linkchecker"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/mbarley333/linkchecker"
 )
 
 // refactor
@@ -30,7 +30,6 @@ func TestCrawl(t *testing.T) {
 	l.HTTPClient = ts.Client()
 
 	url := ts.URL
-	fmt.Println(url)
 
 	want := []linkchecker.Result{
 		{
