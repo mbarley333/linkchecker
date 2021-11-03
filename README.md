@@ -36,8 +36,11 @@ func main() {
 ```
 
 # Installation as a binary
-* go install github.com/mbarley333/linkchecker/cmd/linkchecker@latest
-* Download the prebuilt binaries for your OS from the Releases section
+* If you use a Mac, just curl the install.sh file
+```bash
+curl https://raw.githubusercontent.com/mbarley333/linkchecker/main/install.sh | sh
+```
+* All OS types just download the prebuilt binaries for your OS from the Releases section
   * Unzip
   * For Mac on first usage, open Finder and locate the unzipped file
 	  Right Click on file > Open
