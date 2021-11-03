@@ -24,6 +24,14 @@ func TestCrawl(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.Domain = u.Host
+	l.Scheme = u.Scheme
+
 	l.HTTPClient = ts.Client()
 
 	url := ts.URL
@@ -34,16 +42,26 @@ func TestCrawl(t *testing.T) {
 			Url:           ts.URL,
 			ReferringSite: ts.URL,
 		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/about",
+			ReferringSite: ts.URL,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/home",
+			ReferringSite: ts.URL,
+		},
 	}
 
-	l.Wg.Add(1)
 	l.Crawl(url, url)
-	l.Wg.Wait()
+
 	close(l.Results)
 
 	r := []linkchecker.Result{}
 
 	for result := range l.Results {
+
 		r = append(r, result)
 	}
 	got := r
@@ -127,6 +145,11 @@ func TestCheck(t *testing.T) {
 		{
 			ResponseCode:  http.StatusOK,
 			Url:           ts.URL + "/about",
+			ReferringSite: ts.URL,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/home",
 			ReferringSite: ts.URL,
 		},
 	}
@@ -232,19 +255,25 @@ func TestCanonicaliseUrl(t *testing.T) {
 
 	t.Parallel()
 
-	site := "./"
+	fs := http.FileServer(http.Dir("./testdata"))
 
-	want := "https://example.com"
+	ts := httptest.NewTLSServer(fs)
 
 	l, err := linkchecker.NewLinkChecker()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	l.Scheme = "https"
-	l.Domain = "example.com"
+	l.HTTPClient = ts.Client()
 
-	got, err := l.CanonicaliseUrl(site)
+	url, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := ts.URL
+
+	got, err := l.CanonicaliseUrl(url.Host)
 	if err != nil {
 		t.Fatal(err)
 	}
