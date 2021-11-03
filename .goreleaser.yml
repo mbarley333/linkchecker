@@ -31,3 +31,7 @@ changelog:
     exclude:
       - '^docs:'
       - '^test:'
+
+dockers:
+  - image_templates:
+    - mbarley333/linkchecker
