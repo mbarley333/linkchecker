@@ -182,17 +182,22 @@ func (l *LinkChecker) GetResult(site string, referringSite string) {
 		ReferringSite: referringSite,
 	}
 
-	resp, err := l.GetResponse(site)
-	if err != nil {
-		result.Error = err
-	}
-	result.ResponseCode = resp.StatusCode
+	switch IsHttpTypeLink(site) {
+	case true:
+		resp, err := l.GetResponse(site)
+		if err != nil {
+			result.Error = err
+		}
+		result.ResponseCode = resp.StatusCode
 
-	_, err = url.Parse(site)
-	if err != nil {
-		result.Error = err
-	}
+		_, err = url.Parse(site)
+		if err != nil {
+			result.Error = err
+		}
 
+	case false:
+		result.Error = fmt.Errorf("unable to check non http/https links: %s", site)
+	}
 	l.Results <- result
 
 }
@@ -230,17 +235,24 @@ func (l *LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 	list := htmlquery.Find(doc, "//a/@href")
 
 	for _, n := range list {
-		href := htmlquery.InnerText(n)
+		url := htmlquery.InnerText(n)
 
-		site, err := l.CanonicaliseChildUrl(href)
-		if err != nil {
-			fmt.Fprintf(l.errorLog, "unable to canonicalise url: %s, %s", site, err)
+		if IsHttpTypeLink(url) {
+			url, err = l.CanonicaliseChildUrl(url)
+			if err != nil {
+				fmt.Fprintf(l.errorLog, "unable to canonicalise url: %s, %s", url, err)
+			}
 		}
-		sites = append(sites, site)
+		sites = append(sites, url)
 
 	}
 
 	return sites, nil
+}
+
+func IsHttpTypeLink(link string) bool {
+
+	return !strings.HasPrefix(strings.ToLower(link), "mailto:") && !strings.HasPrefix(strings.ToLower(link), "ftp:")
 }
 
 func (l *LinkChecker) IsHeaderAvailable(site string) (bool, error) {

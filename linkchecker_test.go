@@ -7,10 +7,10 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/mbarley333/linkchecker"
 )
 
-// refactor
 func TestCrawl(t *testing.T) {
 
 	t.Parallel()
@@ -52,6 +52,10 @@ func TestCrawl(t *testing.T) {
 			Url:           ts.URL + "/home",
 			ReferringSite: ts.URL,
 		},
+		{
+			Url:           "mailto:home",
+			ReferringSite: ts.URL,
+		},
 	}
 
 	l.Crawl(url, url)
@@ -66,7 +70,7 @@ func TestCrawl(t *testing.T) {
 	}
 	got := r
 
-	if !cmp.Equal(want, got) {
+	if !cmp.Equal(want, got, cmpopts.IgnoreFields(linkchecker.Result{}, "Error")) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 
