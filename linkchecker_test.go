@@ -1,6 +1,7 @@
 package linkchecker_test
 
 import (
+	"linkchecker"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/mbarley333/linkchecker"
 )
 
 func TestCrawl(t *testing.T) {
@@ -156,6 +156,10 @@ func TestCheck(t *testing.T) {
 			Url:           ts.URL + "/home",
 			ReferringSite: ts.URL,
 		},
+		{
+			Url:           "mailto:home",
+			ReferringSite: ts.URL,
+		},
 	}
 
 	r := []linkchecker.Result{}
@@ -166,7 +170,7 @@ func TestCheck(t *testing.T) {
 
 	got := r
 
-	if !cmp.Equal(want, got) {
+	if !cmp.Equal(want, got, cmpopts.IgnoreFields(linkchecker.Result{}, "Error")) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 
