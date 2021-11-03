@@ -10,7 +10,7 @@ Thank you to @bitfield for all of his mentoring on my Go journey!
 # Installation as a library
 1) From your project folder:
 ```bash
-go install github.com/mbarley333/linkchecker/cmd@latest
+go get github.com/mbarley333/linkchecker
 ```
 2) Usage:
 ```bash
