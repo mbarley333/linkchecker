@@ -25,8 +25,8 @@ curl -OL ${url}
 filename=$(basename $url)
 #gunzip ${filename}
 tar xvfz ${filename}
-filename="blackjack"
+filename="linkchecker"
 chmod +x ${filename}
-BLACKJACK_DIR=~/blackjack/$platform
-mkdir -p $BLACKJACK_DIR
-mv $filename ${BLACKJACK_DIR}/${filename%_${platform}}
+LINKCHECKER_DIR=~/linkchecker/$platform
+mkdir -p $LINKCHECKER_DIR
+mv $filename ${LINKCHECKER_DIR}/${filename%_${platform}}
