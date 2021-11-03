@@ -31,6 +31,7 @@ type LinkChecker struct {
 	Scheme      string
 	Domain      string
 	Ratelimiter *rate.Limiter
+	CheckLink   CheckLink
 }
 
 type Option func(*LinkChecker) error
@@ -69,8 +70,11 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
-		Ratelimiter: rate.NewLimiter(2, 4),
+		Ratelimiter: rate.NewLimiter(8, 16),
 		Results:     make(chan Result, 50),
+		CheckLink: CheckLink{
+			List: make(map[string]bool),
+		},
 	}
 
 	for _, o := range opts {
@@ -113,12 +117,9 @@ func (l *LinkChecker) Check(site string) error {
 		return err
 	}
 
-	already := NewAlreadyCrawled()
-	already.AddSite(canonicalSite)
+	referringSite := canonicalSite
 
-	l.Wg.Add(1)
-	l.Crawl(canonicalSite, canonicalSite, l.Results, already)
-	l.Wg.Wait()
+	l.Crawl(canonicalSite, referringSite)
 
 	close(l.Results)
 
@@ -126,7 +127,49 @@ func (l *LinkChecker) Check(site string) error {
 
 }
 
-func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Result, already *AlreadyCrawled) {
+func (l *LinkChecker) Crawl(site string, referringSite string) {
+
+	// get results for inital page
+	l.Wg.Add(1)
+	l.GetResult(site, referringSite)
+	l.Wg.Wait()
+
+	resp, err := l.GetResponse(site)
+	if err != nil {
+		fmt.Fprint(l.errorLog, err)
+	}
+
+	u, err := url.Parse(site)
+	if err != nil {
+		fmt.Fprint(l.errorLog, err)
+	}
+
+	// crawl pages and check links within domain
+	if u.Host == l.Domain && !l.IsCrawled(site) {
+
+		l.AddSite(site)
+
+		// generate of list of links on page
+		links, err := l.ParseBody(resp.Body)
+		if err != nil {
+			fmt.Fprintf(l.errorLog, "unable to generate site list, %s", err)
+		}
+
+		for _, link := range links {
+
+			if !l.IsCrawled(link) {
+				l.Wg.Add(1)
+				go l.GetResult(link, site)
+				l.Wg.Wait()
+			}
+
+		}
+
+	}
+
+}
+
+func (l *LinkChecker) GetResult(site string, referringSite string) {
 
 	result := Result{
 		Url:           site,
@@ -135,49 +178,21 @@ func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Re
 
 	resp, err := l.GetResponse(site)
 	if err != nil {
-
 		result.Error = err
-		results <- result
-		return
-
 	}
 	result.ResponseCode = resp.StatusCode
 
-	u, err := url.Parse(site)
+	_, err = url.Parse(site)
 	if err != nil {
 		result.Error = err
-		results <- result
-		return
-
 	}
 
-	results <- result
 	l.Wg.Done()
-
-	if u.Host == l.Domain {
-
-		sites, err := l.ParseBody(resp.Body)
-
-		if err != nil {
-			fmt.Fprintf(l.errorLog, "unable to generate site list, %s", err)
-		}
-
-		for _, subsite := range sites {
-
-			if !already.IsCrawled(subsite) {
-				already.AddSite(subsite)
-				l.Wg.Add(1)
-				go l.Crawl(subsite, site, results, already)
-				//l.Wg.Wait()
-
-			}
-		}
-
-	}
+	l.Results <- result
 
 }
 
-func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
+func (l *LinkChecker) GetResponse(site string) (*http.Response, error) {
 
 	ctx := context.Background()
 	err := l.Ratelimiter.Wait(ctx)
@@ -199,7 +214,7 @@ func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
+func (l *LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 
 	sites := []string{}
 	doc, err := htmlquery.Parse(body)
@@ -223,7 +238,7 @@ func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 	return sites, nil
 }
 
-func (l LinkChecker) IsHeaderAvailable(site string) (bool, error) {
+func (l *LinkChecker) IsHeaderAvailable(site string) (bool, error) {
 
 	resp, err := l.HTTPClient.Head(site)
 	if err != nil {
@@ -235,36 +250,25 @@ func (l LinkChecker) IsHeaderAvailable(site string) (bool, error) {
 	return true, nil
 }
 
-type AlreadyCrawled struct {
+type CheckLink struct {
 	Locker sync.Mutex
 	List   map[string]bool
 }
 
-func (a *AlreadyCrawled) IsCrawled(site string) bool {
+func (l *LinkChecker) IsCrawled(site string) bool {
 
 	result := false
-	if a.List[site] {
+	if l.CheckLink.List[site] {
 		result = true
 	}
-
 	return result
-
 }
 
-func (a *AlreadyCrawled) AddSite(site string) {
+func (l *LinkChecker) AddSite(site string) {
 
-	a.Locker.Lock()
-	defer a.Locker.Unlock()
-	a.List[site] = true
-
-}
-
-func NewAlreadyCrawled() *AlreadyCrawled {
-	a := &AlreadyCrawled{
-		List: map[string]bool{},
-	}
-
-	return a
+	l.CheckLink.Locker.Lock()
+	defer l.CheckLink.Locker.Unlock()
+	l.CheckLink.List[site] = true
 }
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
@@ -375,6 +379,7 @@ func RunCLI() {
 				return
 			}
 		}
+
 	}()
 
 	err = l.Check(site)

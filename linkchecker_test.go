@@ -1,7 +1,6 @@
 package linkchecker_test
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,8 +24,6 @@ func TestCrawl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	already := linkchecker.NewAlreadyCrawled()
-
 	l.HTTPClient = ts.Client()
 
 	url := ts.URL
@@ -40,7 +37,7 @@ func TestCrawl(t *testing.T) {
 	}
 
 	l.Wg.Add(1)
-	l.Crawl(url, url, l.Results, already)
+	l.Crawl(url, url)
 	l.Wg.Wait()
 	close(l.Results)
 
@@ -51,11 +48,9 @@ func TestCrawl(t *testing.T) {
 	}
 	got := r
 
-	fmt.Print(want, got)
-
-	// if !cmp.Equal(want, got) {
-	// 	t.Fatal(cmp.Diff(want, got))
-	// }
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
 
 }
 
@@ -180,21 +175,24 @@ func TestIsHeaderAvailable(t *testing.T) {
 func TestHasSiteAlreadyBeenCrawled(t *testing.T) {
 	t.Parallel()
 
-	a := linkchecker.NewAlreadyCrawled()
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	site := "https://example.org"
 
 	want := false
-	got := a.IsCrawled(site)
+	got := l.IsCrawled(site)
 
 	if want != got {
 		t.Fatalf("wanted: %v, got: %v", want, got)
 	}
 
-	a.AddSite(site)
+	l.AddSite(site)
 
 	wantCrawled := true
-	gotCrawled := a.IsCrawled(site)
+	gotCrawled := l.IsCrawled(site)
 
 	if wantCrawled != gotCrawled {
 		t.Fatalf("wanted: %v, got: %v", wantCrawled, gotCrawled)
@@ -205,17 +203,21 @@ func TestHasSiteAlreadyBeenCrawled(t *testing.T) {
 func TestAddSiteToAlreadyCrawledList(t *testing.T) {
 	t.Parallel()
 
-	a := linkchecker.NewAlreadyCrawled()
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	site := "https://example.com"
 
-	result := a.IsCrawled(site)
+	result := l.IsCrawled(site)
 
 	if !result {
-		a.AddSite(site)
+
+		l.AddSite(site)
 	}
 
-	_, ok := a.List[site]
+	_, ok := l.CheckLink.List[site]
 
 	want := true
 	got := ok
