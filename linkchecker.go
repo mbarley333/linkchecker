@@ -171,6 +171,7 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 func (l *LinkChecker) GetResult(site string, referringSite string) {
 
+	defer l.Wg.Done()
 	result := Result{
 		Url:           site,
 		ReferringSite: referringSite,
@@ -187,7 +188,6 @@ func (l *LinkChecker) GetResult(site string, referringSite string) {
 		result.Error = err
 	}
 
-	l.Wg.Done()
 	l.Results <- result
 
 }
@@ -386,6 +386,7 @@ func RunCLI() {
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
+
 	<-done
 
 }
