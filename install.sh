@@ -5,6 +5,9 @@ set -x
 if [[ $(uname -s) == Darwin && $(uname -m) == amd64  ]]
 then
 	platform='Darwin_amd64'
+elif [[ $(uname -s) == Darwin && $(uname -m) == x86_64  ]]
+then
+	platform='Darwin_amd64'
 elif [[ $(uname -s) == Darwin && $(uname -m) == arm64  ]]
 then
 	platform='Darwin_arm64'
