@@ -52,3 +52,4 @@ docker_manifests:
   image_templates:
   - mbarley333/linkchecker:{{ .Version }}-amd64
   - mbarley333/linkchecker:{{ .Version }}-arm64v8
+  skip_push: true
