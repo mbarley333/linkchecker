@@ -1,6 +1,6 @@
 # linkchecker
 
-linkchecker crawls a given site and checks all links on all pages within the domain.  linkchecker is available as a library or os specific binary
+linkchecker is a Go library that will crawl a given web domain and test all urls within the domain.  linkchecker is available as a standalone binary as well.
 
 Built with Aloha in Hawaii 🌊
 
@@ -36,6 +36,8 @@ func main() {
 ```
 
 
+
+
 # Installation as a container (linux, mac)
 ```bash
 docker pull mbarley333/linkchecker:latest
@@ -44,6 +46,8 @@ docker pull mbarley333/linkchecker:latest
 ```bash
 docker run mbarley333/linkchecker:latest https://somewebpage123.com
 ```
+
+
 
 
 # Installation as a binary
