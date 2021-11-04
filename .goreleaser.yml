@@ -50,5 +50,5 @@ dockers:
 docker_manifests:
 - name_template: linkchecker:{{ .Version }}
   image_templates:
-  - "mbarley333/linkchecker:{{ .Version }}-amd64"
-  - "mbarley333/linkchecker:{{ .Version }}-arm64v8"
+  - mbarley333/linkchecker:{{ .Version }}-amd64
+  - mbarley333/linkchecker:{{ .Version }}-arm64v8
