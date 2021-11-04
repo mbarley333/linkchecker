@@ -21,7 +21,7 @@ jq_cmd=".assets[] | select(.name | endswith(\"${platform}.tar.gz\")).browser_dow
 url="$(curl -s https://api.github.com/repos/mbarley333/linkchecker/releases/latest | jq -r "${jq_cmd}")"
 # Download the tarball
 curl -OL ${url}
-# Rename and copy to your blackjack folder
+# Rename and copy to your linkchecker folder
 filename=$(basename $url)
 #gunzip ${filename}
 tar xvfz ${filename}
