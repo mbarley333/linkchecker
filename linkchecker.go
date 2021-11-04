@@ -415,9 +415,16 @@ func RunCLI() {
 
 func help(cliArg string) {
 
+	arg := "./linkchecker"
+
 	// bit of a hack to handle when calling from go run cmd/main.go
-	if strings.Contains(cliArg, "go-build") {
-		cliArg = "go run cmd/main.go"
+	switch {
+	// go run cmd.main.go
+	case strings.Contains(cliArg, "go-build"):
+		arg = "go run cmd/main.go"
+	// docker run
+	case cliArg == "/bin/linkchecker":
+		arg = "docker run mbarley333/linkchecker:[tag] https://somewebpage123.com"
 	}
 
 	fmt.Fprintf(os.Stderr, `
@@ -425,6 +432,6 @@ func help(cliArg string) {
 	  linkchecker will crawl a site and return the status of each link on the site
 	
 	Usage:
-	%s https://somewebpage.com
-	`, cliArg)
+	%s https://somewebpage123.com
+	`, arg)
 }
