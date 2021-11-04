@@ -1,7 +1,6 @@
 package linkchecker_test
 
 import (
-	"fmt"
 	"linkchecker"
 	"net/http"
 	"net/http/httptest"
@@ -9,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
-// refactor
 func TestCrawl(t *testing.T) {
 
 	t.Parallel()
@@ -25,12 +24,17 @@ func TestCrawl(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	already := linkchecker.NewAlreadyCrawled()
+	u, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.Domain = u.Host
+	l.Scheme = u.Scheme
 
 	l.HTTPClient = ts.Client()
 
 	url := ts.URL
-	fmt.Println(url)
 
 	want := []linkchecker.Result{
 		{
@@ -38,25 +42,37 @@ func TestCrawl(t *testing.T) {
 			Url:           ts.URL,
 			ReferringSite: ts.URL,
 		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/about",
+			ReferringSite: ts.URL,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/home",
+			ReferringSite: ts.URL,
+		},
+		{
+			Url:           "mailto:home",
+			ReferringSite: ts.URL,
+		},
 	}
 
-	l.Wg.Add(1)
-	l.Crawl(url, url, l.Results, already)
-	l.Wg.Wait()
+	l.Crawl(url, url)
+
 	close(l.Results)
 
 	r := []linkchecker.Result{}
 
 	for result := range l.Results {
+
 		r = append(r, result)
 	}
 	got := r
 
-	fmt.Print(want, got)
-
-	// if !cmp.Equal(want, got) {
-	// 	t.Fatal(cmp.Diff(want, got))
-	// }
+	if !cmp.Equal(want, got, cmpopts.IgnoreFields(linkchecker.Result{}, "Error")) {
+		t.Fatal(cmp.Diff(want, got))
+	}
 
 }
 
@@ -135,6 +151,15 @@ func TestCheck(t *testing.T) {
 			Url:           ts.URL + "/about",
 			ReferringSite: ts.URL,
 		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/home",
+			ReferringSite: ts.URL,
+		},
+		{
+			Url:           "mailto:home",
+			ReferringSite: ts.URL,
+		},
 	}
 
 	r := []linkchecker.Result{}
@@ -145,7 +170,7 @@ func TestCheck(t *testing.T) {
 
 	got := r
 
-	if !cmp.Equal(want, got) {
+	if !cmp.Equal(want, got, cmpopts.IgnoreFields(linkchecker.Result{}, "Error")) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 
@@ -181,21 +206,24 @@ func TestIsHeaderAvailable(t *testing.T) {
 func TestHasSiteAlreadyBeenCrawled(t *testing.T) {
 	t.Parallel()
 
-	a := linkchecker.NewAlreadyCrawled()
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	site := "https://example.org"
 
 	want := false
-	got := a.IsCrawled(site)
+	got := l.IsCrawled(site)
 
 	if want != got {
 		t.Fatalf("wanted: %v, got: %v", want, got)
 	}
 
-	a.AddSite(site)
+	l.AddSite(site)
 
 	wantCrawled := true
-	gotCrawled := a.IsCrawled(site)
+	gotCrawled := l.IsCrawled(site)
 
 	if wantCrawled != gotCrawled {
 		t.Fatalf("wanted: %v, got: %v", wantCrawled, gotCrawled)
@@ -206,17 +234,21 @@ func TestHasSiteAlreadyBeenCrawled(t *testing.T) {
 func TestAddSiteToAlreadyCrawledList(t *testing.T) {
 	t.Parallel()
 
-	a := linkchecker.NewAlreadyCrawled()
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	site := "https://example.com"
 
-	result := a.IsCrawled(site)
+	result := l.IsCrawled(site)
 
 	if !result {
-		a.AddSite(site)
+
+		l.AddSite(site)
 	}
 
-	_, ok := a.List[site]
+	_, ok := l.CheckLink.List[site]
 
 	want := true
 	got := ok
@@ -231,19 +263,25 @@ func TestCanonicaliseUrl(t *testing.T) {
 
 	t.Parallel()
 
-	site := "./"
+	fs := http.FileServer(http.Dir("./testdata"))
 
-	want := "https://example.com"
+	ts := httptest.NewTLSServer(fs)
 
 	l, err := linkchecker.NewLinkChecker()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	l.Scheme = "https"
-	l.Domain = "example.com"
+	l.HTTPClient = ts.Client()
 
-	got, err := l.CanonicaliseUrl(site)
+	url, err := url.Parse(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := ts.URL
+
+	got, err := l.CanonicaliseUrl(url.Host)
 	if err != nil {
 		t.Fatal(err)
 	}

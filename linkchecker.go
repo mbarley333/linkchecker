@@ -31,6 +31,7 @@ type LinkChecker struct {
 	Scheme      string
 	Domain      string
 	Ratelimiter *rate.Limiter
+	CheckLink   CheckLink
 }
 
 type Option func(*LinkChecker) error
@@ -69,8 +70,11 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
-		Ratelimiter: rate.NewLimiter(2, 4),
-		Results:     make(chan Result, 50),
+		Ratelimiter: rate.NewLimiter(12, 24),
+		Results:     make(chan Result, 10),
+		CheckLink: CheckLink{
+			List: make(map[string]bool),
+		},
 	}
 
 	for _, o := range opts {
@@ -87,7 +91,7 @@ func CheckSiteLinks(site string, opts ...Option) <-chan Result {
 	}
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "unable to create linkchecker struct, %s", err)
+		fmt.Fprintf(l.errorLog, "unable to create linkchecker struct, %s", err)
 	}
 
 	err = l.Check(site)
@@ -113,12 +117,9 @@ func (l *LinkChecker) Check(site string) error {
 		return err
 	}
 
-	already := NewAlreadyCrawled()
-	already.AddSite(canonicalSite)
+	referringSite := canonicalSite
 
-	l.Wg.Add(1)
-	l.Crawl(canonicalSite, canonicalSite, l.Results, already)
-	l.Wg.Wait()
+	l.Crawl(canonicalSite, referringSite)
 
 	close(l.Results)
 
@@ -126,58 +127,82 @@ func (l *LinkChecker) Check(site string) error {
 
 }
 
-func (l *LinkChecker) Crawl(site string, referringSite string, results chan<- Result, already *AlreadyCrawled) {
+func (l *LinkChecker) Crawl(site string, referringSite string) {
 
-	result := Result{
-		Url:           site,
-		ReferringSite: referringSite,
-	}
+	// get results for inital page
+	l.Wg.Add(1)
+	l.GetResult(site, referringSite)
+	l.Wg.Wait()
 
 	resp, err := l.GetResponse(site)
 	if err != nil {
-
-		result.Error = err
-		results <- result
-		return
-
+		fmt.Fprint(l.errorLog, err)
 	}
-	result.ResponseCode = resp.StatusCode
 
 	u, err := url.Parse(site)
 	if err != nil {
-		result.Error = err
-		results <- result
-		return
-
+		fmt.Fprint(l.errorLog, err)
 	}
 
-	results <- result
-	l.Wg.Done()
+	// crawl pages and check links within domain
+	// and only those not in the CheckLink.List map
+	if u.Host == l.Domain && !l.IsCrawled(site) {
 
-	if u.Host == l.Domain {
+		// add site to CheckLink.List map to handle
+		// link back (e.g pageA links pageB which links to pageA)
+		// add site in if statement to allow the top level page to
+		// be crawled.
+		l.AddSite(site)
 
-		sites, err := l.ParseBody(resp.Body)
-
+		// generate of list of links on page
+		links, err := l.ParseBody(resp.Body)
 		if err != nil {
 			fmt.Fprintf(l.errorLog, "unable to generate site list, %s", err)
 		}
 
-		for _, subsite := range sites {
+		for _, link := range links {
 
-			if !already.IsCrawled(subsite) {
-				already.AddSite(subsite)
+			if !l.IsCrawled(link) {
 				l.Wg.Add(1)
-				go l.Crawl(subsite, site, results, already)
-				//l.Wg.Wait()
-
+				go l.GetResult(link, site)
+				l.Wg.Wait()
 			}
+
 		}
 
 	}
 
 }
 
-func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
+func (l *LinkChecker) GetResult(site string, referringSite string) {
+
+	defer l.Wg.Done()
+	result := Result{
+		Url:           site,
+		ReferringSite: referringSite,
+	}
+
+	switch IsHttpTypeLink(site) {
+	case true:
+		resp, err := l.GetResponse(site)
+		if err != nil {
+			result.Error = err
+		}
+		result.ResponseCode = resp.StatusCode
+
+		_, err = url.Parse(site)
+		if err != nil {
+			result.Error = err
+		}
+
+	case false:
+		result.Error = fmt.Errorf("unable to check non http/https links: %s", site)
+	}
+	l.Results <- result
+
+}
+
+func (l *LinkChecker) GetResponse(site string) (*http.Response, error) {
 
 	ctx := context.Background()
 	err := l.Ratelimiter.Wait(ctx)
@@ -199,7 +224,7 @@ func (l LinkChecker) GetResponse(site string) (*http.Response, error) {
 	return resp, nil
 }
 
-func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
+func (l *LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 
 	sites := []string{}
 	doc, err := htmlquery.Parse(body)
@@ -210,20 +235,27 @@ func (l LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 	list := htmlquery.Find(doc, "//a/@href")
 
 	for _, n := range list {
-		href := htmlquery.InnerText(n)
+		url := htmlquery.InnerText(n)
 
-		site, err := l.CanonicaliseUrl(href)
-		if err != nil {
-			fmt.Fprintf(l.errorLog, "unable to canonicalise url: %s, %s", site, err)
+		if IsHttpTypeLink(url) {
+			url, err = l.CanonicaliseChildUrl(url)
+			if err != nil {
+				fmt.Fprintf(l.errorLog, "unable to canonicalise url: %s, %s", url, err)
+			}
 		}
-		sites = append(sites, site)
+		sites = append(sites, url)
 
 	}
 
 	return sites, nil
 }
 
-func (l LinkChecker) IsHeaderAvailable(site string) (bool, error) {
+func IsHttpTypeLink(link string) bool {
+
+	return !strings.HasPrefix(strings.ToLower(link), "mailto:") && !strings.HasPrefix(strings.ToLower(link), "ftp:")
+}
+
+func (l *LinkChecker) IsHeaderAvailable(site string) (bool, error) {
 
 	resp, err := l.HTTPClient.Head(site)
 	if err != nil {
@@ -235,36 +267,25 @@ func (l LinkChecker) IsHeaderAvailable(site string) (bool, error) {
 	return true, nil
 }
 
-type AlreadyCrawled struct {
+type CheckLink struct {
 	Locker sync.Mutex
 	List   map[string]bool
 }
 
-func (a *AlreadyCrawled) IsCrawled(site string) bool {
+func (l *LinkChecker) IsCrawled(site string) bool {
 
 	result := false
-	if a.List[site] {
+	if l.CheckLink.List[site] {
 		result = true
 	}
-
 	return result
-
 }
 
-func (a *AlreadyCrawled) AddSite(site string) {
+func (l *LinkChecker) AddSite(site string) {
 
-	a.Locker.Lock()
-	defer a.Locker.Unlock()
-	a.List[site] = true
-
-}
-
-func NewAlreadyCrawled() *AlreadyCrawled {
-	a := &AlreadyCrawled{
-		List: map[string]bool{},
-	}
-
-	return a
+	l.CheckLink.Locker.Lock()
+	defer l.CheckLink.Locker.Unlock()
+	l.CheckLink.List[site] = true
 }
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
@@ -293,42 +314,48 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 			}
 
 		}
-		// crawled links
-	} else {
-
-		url, err := url.Parse(site)
-
-		if err != nil {
-			return "", err
-		}
-
-		scheme := ""
-		if url.Scheme == "" {
-			scheme = l.Scheme + "://"
-		}
-
-		//slash needed for intrasite links with w/o domain (e.g <a href="home">)
-		slash := ""
-
-		domain := ""
-		if url.Host == "" {
-			domain = l.Domain
-			slash = "/"
-		}
-
-		// handle ./ link back to main page
-		if site == "./" {
-			site = ""
-			slash = ""
-		} else if strings.Index(site, "/") == 0 {
-			site = RemoveLeadingSlash(site)
-		}
-
-		// assemble url
-		str := []string{scheme, domain, slash, site}
-		newUrl = strings.Join(str, "")
 
 	}
+
+	return newUrl, nil
+}
+
+func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
+
+	newUrl := site
+	var err error
+
+	url, err := url.Parse(site)
+
+	if err != nil {
+		return "", err
+	}
+
+	scheme := ""
+	if url.Scheme == "" {
+		scheme = l.Scheme + "://"
+	}
+
+	domain := ""
+	if url.Host == "" {
+		domain = l.Domain + "/"
+		//slash = "/"
+	}
+
+	// handle ./ link back to main page
+	if site == "./" {
+		// set to empty string and just use domain name
+		site = ""
+		//slash = ""
+	} else if strings.Index(site, "/") == 0 {
+		site = RemoveLeadingSlash(site)
+	}
+
+	// //slash needed for intrasite links with w/o domain (e.g <a href="home">)
+	// slash := ""
+	// assemble url
+	str := []string{scheme, domain, site}
+	newUrl = strings.Join(str, "")
 
 	return newUrl, nil
 }
@@ -346,21 +373,20 @@ func RemoveLeadingSlash(site string) string {
 func RunCLI() {
 
 	if len(os.Args) < 2 {
-		help()
-		os.Exit(0)
+		help(os.Args[0])
+		os.Exit(1)
 	}
 
-	arg := os.Args[1:2]
-	if arg[0] == "help" {
-		help()
+	site := os.Args[1]
+	if site == "help" {
+		fmt.Println(os.Args[0])
+		help(os.Args[0])
 		os.Exit(0)
 	}
-
-	site := arg[0]
 
 	l, err := NewLinkChecker()
 	if err != nil {
-		fmt.Fprintln(l.errorLog, err)
+		fmt.Fprintln(os.Stderr, err)
 	}
 	done := make(chan bool)
 
@@ -375,22 +401,37 @@ func RunCLI() {
 				return
 			}
 		}
+
 	}()
 
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
+
 	<-done
 
 }
 
-func help() {
-	fmt.Fprintln(os.Stderr, `
+func help(cliArg string) {
+
+	arg := "./linkchecker"
+
+	// bit of a hack to handle when calling from go run cmd/main.go
+	switch {
+	// go run cmd.main.go
+	case strings.Contains(cliArg, "go-build"):
+		arg = "go run cmd/main.go"
+	// docker run
+	case cliArg == "/bin/linkchecker":
+		arg = "docker run mbarley333/linkchecker:[tag]"
+	}
+
+	fmt.Fprintf(os.Stderr, `
 	Description:
 	  linkchecker will crawl a site and return the status of each link on the site
 	
 	Usage:
-	./linkchecker https://somewebpage.com
-	`)
+	%s https://somewebpage123.com
+	`, arg)
 }
