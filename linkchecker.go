@@ -424,7 +424,7 @@ func help(cliArg string) {
 		arg = "go run cmd/main.go"
 	// docker run
 	case cliArg == "/bin/linkchecker":
-		arg = "docker run mbarley333/linkchecker:[tag] https://somewebpage123.com"
+		arg = "docker run mbarley333/linkchecker:[tag]"
 	}
 
 	fmt.Fprintf(os.Stderr, `
