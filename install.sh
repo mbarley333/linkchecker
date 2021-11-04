@@ -2,18 +2,15 @@
 set -x
 
 # Determine architecture
-if [[ $(uname -s) == Darwin && $(uname -m) == amd64  ]]
+if [[ $(uname -s) == Darwin && $(uname -m) == x86_64  ]]
 then
-	platform='Darwin_amd64'
-elif [[ $(uname -s) == Darwin && $(uname -m) == x86_64  ]]
-then
-	platform='Darwin_amd64'
+	platform='Darwin_x86_64'
 elif [[ $(uname -s) == Darwin && $(uname -m) == arm64  ]]
 then
 	platform='Darwin_arm64'
 elif [[ $(uname -s) == Linux ]]
 then
-	platform='Linux_amd64'
+	platform='Linux_x86_64'
 else
 	echo "No supported architecture found"
 	exit 1
