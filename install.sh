@@ -34,5 +34,3 @@ mkdir -p $LINKCHECKER_DIR
 mv $filename ${LINKCHECKER_DIR}/${filename%_${platform}}
 echo ""
 echo "installed at: " ${LINKCHECKER_DIR}/${filename%_${platform}}
-echo ""
-echo "usage: ."${LINKCHECKER_DIR}/${filename%_${platform}} "https://somewebpage123.com"
