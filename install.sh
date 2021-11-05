@@ -27,6 +27,14 @@ filename=$(basename $url)
 tar xvfz ${filename}
 filename="linkchecker"
 chmod +x ${filename}
-LINKCHECKER_DIR=~/linkchecker/$platform
-mkdir -p $LINKCHECKER_DIR
-mv $filename ${LINKCHECKER_DIR}/${filename%_${platform}}
+
+if [[ $(uname -s) == Darwin && $(uname -m) == x86_64  ]]
+then
+	mkdir -p ~/linkchecker/$platform
+	mv $filename ~/linkchecker/$platform/${filename%_${platform}}
+else
+	LINKCHECKER_DIR=~/linkchecker/$platform
+	mkdir -p $LINKCHECKER_DIR
+	mv $filename ${LINKCHECKER_DIR}/${filename%_${platform}}
+fi
+
