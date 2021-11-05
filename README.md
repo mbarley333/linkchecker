@@ -22,7 +22,7 @@ import (
 )
 
 func main() {
-	results := linkchecker.CheckSiteLinks("https://somewebpage.com")
+	results := linkchecker.CheckSiteLinks("https://somewebpage123.com")
 
 	for result := range results {
 
