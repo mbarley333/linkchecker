@@ -1,0 +1,19 @@
+package linkchecker_test
+
+import (
+	"linkchecker"
+	"net/http"
+	"testing"
+)
+
+func TestCacheSet(t *testing.T) {
+	t.Parallel()
+
+	result := linkchecker.Result{
+		ResponseCode: http.StatusOK,
+		Url:          "https://somewebpage123.com",
+	}
+
+	c := linkchecker.ResultCache{}
+
+}
