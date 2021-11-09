@@ -120,24 +120,21 @@ func (l *LinkChecker) Check(site string) error {
 	referringSite := canonicalSite
 
 	l.Wg.Add(1)
-	go l.NewCrawl(canonicalSite, referringSite)
+	go l.Crawl(canonicalSite, referringSite)
 	l.Wg.Wait()
 
-	//fmt.Println("channel close next")
 	close(l.Results)
 
 	return nil
 
 }
 
-func (l *LinkChecker) NewCrawl(site string, referringSite string) {
+func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	defer l.Wg.Done()
 
-	//fmt.Println("newcrawl: ", site, l.IsCrawled(site))
-
 	if l.IsCrawled(site) {
-		//fmt.Println("already crawled...exiting")
+		fmt.Println("already crawled: ", site, " came from: ", referringSite)
 		return
 	}
 
@@ -148,7 +145,6 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 
 	_, err := l.IsHeaderAvailable(site)
 	if err != nil {
-		//fmt.Println("error...exiting")
 		result.Error = err
 		l.Results <- result
 		return
@@ -156,7 +152,6 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 
 	resp, err := l.HTTPClient.Get(site)
 	if err != nil {
-		//fmt.Println("error...exiting")
 		result.Error = err
 		l.Results <- result
 		return
@@ -166,7 +161,6 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 
 	u, err := url.Parse(site)
 	if err != nil {
-		//fmt.Println("error...exiting")
 		result.Error = err
 		l.Results <- result
 		return
@@ -175,7 +169,6 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 	l.AddSite(site)
 
 	if u.Host != l.Domain {
-		//fmt.Println("inside host != domain")
 		l.Results <- result
 
 		return
@@ -185,6 +178,7 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 
 	// generate of list of links on page
 	links, err := l.ParseBody(resp.Body)
+
 	if err != nil {
 		fmt.Fprintf(l.errorLog, "unable to generate site list, %s", err)
 	}
@@ -192,15 +186,15 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 	for _, link := range links {
 
 		if !l.IsCrawled(link) {
-			//fmt.Println("go routine link:", link, "site: ", site, link == site, "iscrawl: ", l.IsCrawled(link))
 			l.Wg.Add(1)
+
 			ctx := context.Background()
 			err := l.Ratelimiter.Wait(ctx)
 			if err != nil {
 				fmt.Fprintln(l.errorLog, err)
 			}
-			go l.NewCrawl(link, site)
-			//l.Wg.Wait()
+			go l.Crawl(link, site)
+
 		}
 
 	}
@@ -208,12 +202,6 @@ func (l *LinkChecker) NewCrawl(site string, referringSite string) {
 }
 
 func (l *LinkChecker) GetResponse(site string) (*http.Response, error) {
-
-	// ctx := context.Background()
-	// err := l.Ratelimiter.Wait(ctx)
-	// if err != nil {
-	// 	return nil, err
-	// }
 
 	_, err := l.IsHeaderAvailable(site)
 	if err != nil {
@@ -293,7 +281,6 @@ func (l *LinkChecker) AddSite(site string) {
 	defer l.CheckLink.mutex.Unlock()
 	l.CheckLink.List[site] = true
 
-	//fmt.Println("added site: ", site, l.CheckLink.List[site])
 }
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
@@ -316,8 +303,12 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 			}
 
 			if isUrl {
-				l.Scheme = scheme
-				l.Domain = site
+				u, err := url.Parse(newUrl)
+				if err != nil {
+					fmt.Fprintf(l.errorLog, "unable to parse url %s, %s", newUrl, err)
+				}
+				l.Scheme = u.Scheme
+				l.Domain = u.Host
 				break
 			}
 
@@ -338,7 +329,7 @@ func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
 		// set to empty string and just use domain name
 		canonical = l.Scheme + "://" + l.Domain
 
-	} else if strings.Index(site, "/") == 0 {
+	} else if strings.HasPrefix(site, "/") {
 		canonical = RemoveLeadingSlash(canonical)
 	}
 
@@ -347,11 +338,8 @@ func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
 		return "", err
 	}
 
-	//fmt.Println(site, " canonChildUrl:", url.Scheme == "", url.Host)
-
 	if url.Host == "" {
 		canonical = l.Domain + "/" + canonical
-		//slash = "/"
 	}
 
 	if url.Scheme == "" {
@@ -392,10 +380,12 @@ func RunCLI() {
 	done := make(chan bool)
 
 	go func() {
+		counter := 1
 		for {
 			r, more := <-l.Results
 			if more {
 				fmt.Println(r)
+				counter += 1
 			} else {
 				fmt.Println("received all results")
 				done <- true
@@ -418,13 +408,8 @@ func help(cliArg string) {
 
 	arg := "./linkchecker"
 
-	// bit of a hack to handle when calling from go run cmd/main.go
-	switch {
-	// go run cmd.main.go
-	case strings.Contains(cliArg, "go-build"):
-		arg = "go run cmd/main.go"
 	// docker run
-	case cliArg == "/bin/linkchecker":
+	if cliArg == "/bin/linkchecker" {
 		arg = "docker run mbarley333/linkchecker:[tag]"
 	}
 
