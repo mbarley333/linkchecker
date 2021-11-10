@@ -379,12 +379,12 @@ func RunCLI() {
 	done := make(chan bool)
 
 	go func() {
-		counter := 1
+
 		for {
 			r, more := <-l.Results
 			if more {
 				fmt.Println(r)
-				counter += 1
+
 			} else {
 				fmt.Println("received all results")
 				done <- true
