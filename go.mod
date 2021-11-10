@@ -1,4 +1,4 @@
-module linkchecker
+module github.com/mbarley333/linkchecker
 
 go 1.17
 
