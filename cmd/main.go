@@ -1,7 +1,7 @@
 package main
 
 import (
-	"linkchecker"
+	"github.com/mbarley333/linkchecker"
 )
 
 func main() {

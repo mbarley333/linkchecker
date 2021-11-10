@@ -2,7 +2,6 @@ package linkchecker_test
 
 import (
 	"fmt"
-	"linkchecker"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -10,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/mbarley333/linkchecker"
 )
 
 func TestCheck(t *testing.T) {

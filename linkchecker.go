@@ -134,7 +134,6 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	defer l.Wg.Done()
 
 	if l.IsCrawled(site) {
-		fmt.Println("already crawled: ", site, " came from: ", referringSite)
 		return
 	}
 
