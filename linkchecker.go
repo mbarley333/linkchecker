@@ -71,7 +71,7 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
 		Ratelimiter: rate.NewLimiter(20, 40),
-		Results:     make(chan Result, 50),
+		Results:     make(chan Result, 1000),
 		CheckLink: CheckLink{
 			List: make(map[string]bool),
 		},
