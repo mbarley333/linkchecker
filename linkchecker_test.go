@@ -15,7 +15,7 @@ import (
 func TestCheck(t *testing.T) {
 	t.Parallel()
 
-	fs := http.FileServer(http.Dir("testdata"))
+	fs := http.FileServer(http.Dir("./testdata"))
 
 	ts := httptest.NewTLSServer(fs)
 
@@ -76,6 +76,8 @@ func TestCheck(t *testing.T) {
 		wantResultsMap[r.Url] = r
 	}
 
+	// range over results and compare to map
+	// to handle concurrent return of results
 	for _, r := range gotResults {
 
 		want := r
