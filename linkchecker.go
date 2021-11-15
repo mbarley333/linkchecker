@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -70,7 +71,7 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
-		Ratelimiter: rate.NewLimiter(20, 40),
+		Ratelimiter: rate.NewLimiter(2, 2),
 		Results:     make(chan Result, 1000),
 		CheckLink: CheckLink{
 			List: make(map[string]bool),
@@ -185,10 +186,12 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	for _, link := range links {
 
 		if !l.IsCrawled(link) {
-			l.Wg.Add(1)
 
 			ctx := context.Background()
 			err := l.Ratelimiter.Wait(ctx)
+
+			l.Wg.Add(1)
+
 			if err != nil {
 				fmt.Fprintln(l.errorLog, err)
 			}
@@ -355,6 +358,67 @@ func RemoveLeadingSlash(site string) string {
 	}
 
 	return site
+}
+
+type Status int
+
+var StatusStringMap = map[Status]string{
+	None:              "Invalid Status",
+	StatusUp:          "Up",
+	StatusDown:        "Down",
+	StatusRateLimited: "RateLimited",
+}
+
+func (s Status) String() string {
+	return StatusStringMap[s]
+}
+
+const (
+	None Status = iota
+	StatusUp
+	StatusDown
+	StatusRateLimited
+)
+
+var HttpStatusMap = map[int]Status{
+	http.StatusAccepted:        StatusUp,
+	http.StatusOK:              StatusUp,
+	http.StatusCreated:         StatusUp,
+	http.StatusTooManyRequests: StatusRateLimited,
+}
+
+type Color string
+
+const (
+	ColorRed    Color = "\u001b[31;1m"
+	ColorGreen  Color = "\033[32m"
+	ColorYellow Color = "\u001b[33;1m"
+	ColorReset  Color = "\033[0m"
+)
+
+var StatusColorMap = map[Status]Color{
+	StatusUp:          ColorGreen,
+	StatusDown:        ColorRed,
+	StatusRateLimited: ColorYellow,
+}
+
+func (r Result) String() string {
+
+	status := None
+
+	resp, ok := HttpStatusMap[r.ResponseCode]
+
+	if !ok {
+		status = StatusDown
+	} else {
+		status = resp
+	}
+
+	color := StatusColorMap[status]
+
+	str := []string{string(color), "URL: ", r.Url, " \nStatus: ", StatusStringMap[HttpStatusMap[r.ResponseCode]], "\nStatus Code: ", strconv.Itoa(r.ResponseCode), " \nReferring URL: ", r.ReferringSite, "\n", string(ColorReset)}
+
+	return strings.Join(str, "")
 }
 
 // CLI

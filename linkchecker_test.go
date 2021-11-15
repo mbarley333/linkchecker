@@ -239,3 +239,15 @@ func TestRemoveLeadingSlashes(t *testing.T) {
 	}
 
 }
+
+// func TestReport(t *testing.T) {
+// 	t.Parallel()
+
+// 	results := make(chan linkchecker.Result, 2)
+
+// 	results <- linkchecker.Result{ResponseCode: 200, Url: "https://example.com/about", ReferringSite: "https://example.com"}
+// 	results <- linkchecker.Result{ResponseCode: 429, Url: "https://example.com/books", ReferringSite: "https://example.com"}
+
+// 	report := linkchecker.GetReport(results)
+
+// }
