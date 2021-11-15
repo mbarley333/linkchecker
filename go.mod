@@ -1,4 +1,4 @@
-module linkchecker
+module github.com/mbarley333/linkchecker
 
 go 1.17
 
@@ -13,5 +13,4 @@ require (
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	golang.org/x/net v0.0.0-20200421231249-e086a090c8fd // indirect
 	golang.org/x/text v0.3.0 // indirect
-	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543 // indirect
 )

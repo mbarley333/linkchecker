@@ -1,126 +1,16 @@
 package linkchecker_test
 
 import (
-	"linkchecker"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/mbarley333/linkchecker"
 )
-
-func TestCrawl(t *testing.T) {
-
-	t.Parallel()
-
-	fs := http.FileServer(http.Dir("./testdata"))
-
-	ts := httptest.NewTLSServer(fs)
-
-	l, err := linkchecker.NewLinkChecker()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	u, err := url.Parse(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	l.Domain = u.Host
-	l.Scheme = u.Scheme
-
-	l.HTTPClient = ts.Client()
-
-	url := ts.URL
-
-	want := []linkchecker.Result{
-		{
-			ResponseCode:  http.StatusOK,
-			Url:           ts.URL,
-			ReferringSite: ts.URL,
-		},
-		{
-			ResponseCode:  http.StatusOK,
-			Url:           ts.URL + "/about",
-			ReferringSite: ts.URL,
-		},
-		{
-			ResponseCode:  http.StatusOK,
-			Url:           ts.URL + "/home",
-			ReferringSite: ts.URL,
-		},
-		{
-			Url:           "mailto:home",
-			ReferringSite: ts.URL,
-		},
-	}
-
-	l.Crawl(url, url)
-
-	close(l.Results)
-
-	r := []linkchecker.Result{}
-
-	for result := range l.Results {
-
-		r = append(r, result)
-	}
-	got := r
-
-	if !cmp.Equal(want, got, cmpopts.IgnoreFields(linkchecker.Result{}, "Error")) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-
-}
-
-func TestParseBody(t *testing.T) {
-	t.Parallel()
-
-	fs := http.FileServer(http.Dir("./testdata/about"))
-
-	ts := httptest.NewTLSServer(fs)
-
-	site := ts.URL
-
-	l, err := linkchecker.NewLinkChecker()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	l.HTTPClient = ts.Client()
-
-	url, err := url.Parse(site)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	l.Scheme, l.Domain = url.Scheme, url.Host
-
-	resp, err := l.HTTPClient.Get(site)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	want := []string{
-		ts.URL + "/home",
-		ts.URL + "/zzz",
-	}
-
-	got, err := l.ParseBody(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !cmp.Equal(want, got) {
-		t.Fatal(cmp.Diff(want, got))
-	}
-
-}
 
 func TestCheck(t *testing.T) {
 	t.Parallel()
@@ -140,7 +30,7 @@ func TestCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	want := []linkchecker.Result{
+	wantResults := []linkchecker.Result{
 		{
 			ResponseCode:  http.StatusOK,
 			Url:           ts.URL,
@@ -157,20 +47,68 @@ func TestCheck(t *testing.T) {
 			ReferringSite: ts.URL,
 		},
 		{
+			ResponseCode:  0,
 			Url:           "mailto:home",
 			ReferringSite: ts.URL,
+			Error:         fmt.Errorf(`Head "mailto:home": unsupported protocol scheme "mailto"`),
+		},
+		{
+			ResponseCode:  http.StatusNotFound,
+			Url:           ts.URL + "/zzz",
+			ReferringSite: ts.URL + "/about",
 		},
 	}
 
-	r := []linkchecker.Result{}
+	// helper function to test for existence of error
+	equateAnyError := cmp.Comparer(func(x, y error) bool {
+		return (x == nil) == (y == nil)
+	})
+
+	gotResults := []linkchecker.Result{}
 
 	for result := range l.Results {
-		r = append(r, result)
+		gotResults = append(gotResults, result)
 	}
 
-	got := r
+	wantResultsMap := make(map[string]linkchecker.Result)
 
-	if !cmp.Equal(want, got, cmpopts.IgnoreFields(linkchecker.Result{}, "Error")) {
+	for _, r := range wantResults {
+		wantResultsMap[r.Url] = r
+	}
+
+	// range over results and compare to map
+	// to handle concurrent return of results
+	for _, r := range gotResults {
+
+		want := r
+		got := wantResultsMap[r.Url]
+
+		if !cmp.Equal(want, got, equateAnyError) {
+			t.Fatal(cmp.Diff(want, got))
+		}
+
+	}
+
+}
+
+func TestParseBody(t *testing.T) {
+	t.Parallel()
+
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	r := strings.NewReader(`<p>Here is <a href="https://example.com"> a link to a page</a></p>`)
+
+	want := []string{"https://example.com"}
+
+	got, err := l.ParseBody(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 
@@ -179,7 +117,7 @@ func TestCheck(t *testing.T) {
 func TestIsHeaderAvailable(t *testing.T) {
 	t.Parallel()
 
-	fs := http.FileServer(http.Dir("./testdata"))
+	fs := http.FileServer(http.Dir("testdata"))
 
 	ts := httptest.NewTLSServer(fs)
 
@@ -203,7 +141,8 @@ func TestIsHeaderAvailable(t *testing.T) {
 
 }
 
-func TestHasSiteAlreadyBeenCrawled(t *testing.T) {
+func TestIsSiteInCheckLinkList(t *testing.T) {
+
 	t.Parallel()
 
 	l, err := linkchecker.NewLinkChecker()
@@ -211,50 +150,16 @@ func TestHasSiteAlreadyBeenCrawled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	site := "https://example.org"
+	dummyUrl := "https://example.com"
 
-	want := false
-	got := l.IsCrawled(site)
-
-	if want != got {
-		t.Fatalf("wanted: %v, got: %v", want, got)
+	if l.IsCrawled(dummyUrl) {
+		t.Fatalf("found url before it was added")
 	}
 
-	l.AddSite(site)
+	l.AddSite(dummyUrl)
 
-	wantCrawled := true
-	gotCrawled := l.IsCrawled(site)
-
-	if wantCrawled != gotCrawled {
-		t.Fatalf("wanted: %v, got: %v", wantCrawled, gotCrawled)
-	}
-
-}
-
-func TestAddSiteToAlreadyCrawledList(t *testing.T) {
-	t.Parallel()
-
-	l, err := linkchecker.NewLinkChecker()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	site := "https://example.com"
-
-	result := l.IsCrawled(site)
-
-	if !result {
-
-		l.AddSite(site)
-	}
-
-	_, ok := l.CheckLink.List[site]
-
-	want := true
-	got := ok
-
-	if want != got {
-		t.Fatalf("wanted: %v, got: %v", want, got)
+	if !l.IsCrawled(dummyUrl) {
+		t.Fatalf("could not find url after it was added")
 	}
 
 }
@@ -263,31 +168,59 @@ func TestCanonicaliseUrl(t *testing.T) {
 
 	t.Parallel()
 
-	fs := http.FileServer(http.Dir("./testdata"))
-
-	ts := httptest.NewTLSServer(fs)
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+	}))
 
 	l, err := linkchecker.NewLinkChecker()
 	if err != nil {
 		t.Fatal(err)
 	}
-
 	l.HTTPClient = ts.Client()
 
-	url, err := url.Parse(ts.URL)
+	// check host only url
+	u, err := url.Parse(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	want := ts.URL
-
-	got, err := l.CanonicaliseUrl(url.Host)
-	if err != nil {
-		t.Fatal(err)
+	type testCase struct {
+		url      string
+		want     string
+		scheme   string
+		domain   string
+		isParent bool
 	}
 
-	if want != got {
-		t.Fatalf("want: %s, got: %s", want, got)
+	tcs := []testCase{
+		{url: ts.URL, want: ts.URL, scheme: "https", domain: "", isParent: true},
+		{url: u.Host, want: ts.URL, scheme: "", domain: "", isParent: true},
+		{url: "./", want: ts.URL, scheme: "https", domain: u.Host, isParent: false},
+		{url: "//about", want: ts.URL + "/about", scheme: "https", domain: u.Host, isParent: false},
+		{url: "about", want: ts.URL + "/about", scheme: "https", domain: u.Host, isParent: false},
+	}
+
+	for _, tc := range tcs {
+
+		l.Scheme = tc.scheme
+		l.Domain = tc.domain
+		got := ""
+		if tc.isParent {
+			got, err = l.CanonicaliseUrl(tc.url)
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else if !tc.isParent {
+			got, err = l.CanonicaliseChildUrl(tc.url)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+
+		if tc.want != got {
+			t.Fatalf("want: %s, got: %s", tc.want, got)
+		}
+
 	}
 
 }
@@ -306,3 +239,15 @@ func TestRemoveLeadingSlashes(t *testing.T) {
 	}
 
 }
+
+// func TestReport(t *testing.T) {
+// 	t.Parallel()
+
+// 	results := make(chan linkchecker.Result, 2)
+
+// 	results <- linkchecker.Result{ResponseCode: 200, Url: "https://example.com/about", ReferringSite: "https://example.com"}
+// 	results <- linkchecker.Result{ResponseCode: 429, Url: "https://example.com/books", ReferringSite: "https://example.com"}
+
+// 	report := linkchecker.GetReport(results)
+
+// }
