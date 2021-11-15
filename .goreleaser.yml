@@ -36,7 +36,7 @@ dockers:
   build_flag_templates:
   - "--platform=linux/amd64"
 - image_templates:
-  - "mbarley333/linkchecker:{{ .Version }}-arm64v8"
+  - "mbarley333/linkchecker:{{ .Version }}-arm64"
   use: buildx
   goarch: arm64
   dockerfile: Dockerfile
@@ -46,8 +46,8 @@ docker_manifests:
 - name_template: "mbarley333/linkchecker:{{ .Version }}"
   image_templates:
   - "mbarley333/linkchecker:{{ .Version }}-amd64"
-  - "mbarley333/linkchecker:{{ .Version }}-arm64v8"
+  - "mbarley333/linkchecker:{{ .Version }}-arm64"
 - name_template: "mbarley333/linkchecker:latest"
   image_templates:
   - "mbarley333/linkchecker:{{ .Version }}-amd64"
-  - "mbarley333/linkchecker:{{ .Version }}-arm64v8"
+  - "mbarley333/linkchecker:{{ .Version }}-arm64"
