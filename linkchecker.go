@@ -138,7 +138,7 @@ func (l *LinkChecker) GetAllResults() []Result {
 
 func (l *LinkChecker) Check(site string) error {
 
-	url, err := url.Parse(site)
+	url, err := url.Parse(strings.TrimSpace(site))
 	if err != nil {
 		return err
 	}
@@ -221,7 +221,6 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	resp, err := l.HTTPClient.Do(request)
 
-	//resp, err := l.HTTPClient.Get(site)
 	if err != nil {
 		result.Problem = err.Error()
 		result.Status = StatusDown
@@ -314,12 +313,11 @@ func (l *LinkChecker) HeadStatus(site string) (int, error) {
 	if err != nil {
 		fmt.Println(err)
 	}
-	request.Header.Set("user-agent", "linkchecker 0.3.12")
+	request.Header.Set("user-agent", "linkchecker")
 	request.Header.Set("accept", "*/*")
 
 	resp, err := l.HTTPClient.Do(request)
 
-	//resp, err := l.HTTPClient.Head(site)
 	if err != nil {
 		return 0, err
 	}
@@ -354,7 +352,7 @@ func (l *LinkChecker) AddSite(site string) {
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 
-	newUrl := site
+	newUrl := strings.TrimSpace(site)
 
 	// if no initial scheme from Check, try https and http
 	if l.Scheme == "" {
@@ -388,8 +386,7 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 
 func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
 
-	//newUrl := site
-	canonical := site
+	canonical := strings.TrimSpace(site)
 	var err error
 
 	if canonical == "./" {
@@ -516,6 +513,8 @@ func RunCLI() {
 	for _, result := range results {
 		fmt.Fprintln(l.output, result)
 	}
+
+	fmt.Fprintln(l.output, "linkcheck completed")
 
 }
 
