@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -128,6 +129,8 @@ func (l *LinkChecker) GetAllResults() []Result {
 			}
 		}
 	}
+
+	sort.Slice(results, func(i, j int) bool { return results[i].Url < results[j].Url })
 
 	return results
 
