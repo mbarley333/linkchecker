@@ -1,7 +1,6 @@
 package linkchecker_test
 
 import (
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,8 +8,74 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/mbarley333/linkchecker"
 )
+
+func TestCheckVerbose(t *testing.T) {
+	t.Parallel()
+
+	fs := http.FileServer(http.Dir("./testdata"))
+
+	ts := httptest.NewTLSServer(fs)
+
+	l, err := linkchecker.NewLinkChecker(
+		linkchecker.WithVerboseMode(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.HTTPClient = ts.Client()
+
+	err = l.Check(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []linkchecker.Result{
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL,
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusUp,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/about",
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusUp,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/home",
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusUp,
+		},
+		{
+			ResponseCode:  0,
+			Url:           "mailto:home",
+			ReferringSite: ts.URL,
+			Problem:       `Head "mailto:home": unsupported protocol scheme "mailto"`,
+			Status:        linkchecker.StatusDown,
+		},
+		{
+			ResponseCode:  http.StatusNotFound,
+			Url:           ts.URL + "/zzz",
+			ReferringSite: ts.URL + "/about",
+			Status:        linkchecker.StatusDown,
+			Problem:       "Non OK response",
+		},
+	}
+
+	got := l.GetAllResults()
+
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Url < y.Url
+	})) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+
+}
 
 func TestCheck(t *testing.T) {
 	t.Parallel()
@@ -30,63 +95,30 @@ func TestCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	wantResults := []linkchecker.Result{
-		{
-			ResponseCode:  http.StatusOK,
-			Url:           ts.URL,
-			ReferringSite: ts.URL,
-		},
-		{
-			ResponseCode:  http.StatusOK,
-			Url:           ts.URL + "/about",
-			ReferringSite: ts.URL,
-		},
-		{
-			ResponseCode:  http.StatusOK,
-			Url:           ts.URL + "/home",
-			ReferringSite: ts.URL,
-		},
+	want := []linkchecker.Result{
+
 		{
 			ResponseCode:  0,
 			Url:           "mailto:home",
 			ReferringSite: ts.URL,
-			Error:         fmt.Errorf(`Head "mailto:home": unsupported protocol scheme "mailto"`),
+			Problem:       `Head "mailto:home": unsupported protocol scheme "mailto"`,
+			Status:        linkchecker.StatusDown,
 		},
 		{
 			ResponseCode:  http.StatusNotFound,
 			Url:           ts.URL + "/zzz",
 			ReferringSite: ts.URL + "/about",
+			Status:        linkchecker.StatusDown,
+			Problem:       "Non OK response",
 		},
 	}
 
-	// helper function to test for existence of error
-	equateAnyError := cmp.Comparer(func(x, y error) bool {
-		return (x == nil) == (y == nil)
-	})
+	got := l.GetAllResults()
 
-	gotResults := []linkchecker.Result{}
-
-	for result := range l.Results {
-		gotResults = append(gotResults, result)
-	}
-
-	wantResultsMap := make(map[string]linkchecker.Result)
-
-	for _, r := range wantResults {
-		wantResultsMap[r.Url] = r
-	}
-
-	// range over results and compare to map
-	// to handle concurrent return of results
-	for _, r := range gotResults {
-
-		want := r
-		got := wantResultsMap[r.Url]
-
-		if !cmp.Equal(want, got, equateAnyError) {
-			t.Fatal(cmp.Diff(want, got))
-		}
-
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Url < y.Url
+	})) {
+		t.Fatal(cmp.Diff(want, got))
 	}
 
 }
@@ -127,10 +159,10 @@ func TestIsHeaderAvailable(t *testing.T) {
 	}
 	l.HTTPClient = ts.Client()
 
-	site := ts.URL + "/home.html"
+	site := ts.URL + "/home"
 
-	want := true
-	got, err := l.IsHeaderAvailable(site)
+	want := http.StatusOK
+	got, err := l.HeadStatus(site)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,15 +271,3 @@ func TestRemoveLeadingSlashes(t *testing.T) {
 	}
 
 }
-
-// func TestReport(t *testing.T) {
-// 	t.Parallel()
-
-// 	results := make(chan linkchecker.Result, 2)
-
-// 	results <- linkchecker.Result{ResponseCode: 200, Url: "https://example.com/about", ReferringSite: "https://example.com"}
-// 	results <- linkchecker.Result{ResponseCode: 429, Url: "https://example.com/books", ReferringSite: "https://example.com"}
-
-// 	report := linkchecker.GetReport(results)
-
-// }

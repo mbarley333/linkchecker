@@ -19,25 +19,8 @@ RELEASES_API="https://api.github.com/repos/mbarley333/linkchecker/releases/lates
 
 
 
-findGoBinDirectory() {
-    EFFECTIVE_GOPATH=$(go env GOPATH)
-    # CYGWIN: Convert Windows-style path into sh-compatible path
-    if [ "$OS_CYGWIN" = "1" ]; then
-	EFFECTIVE_GOPATH=$(cygpath "$EFFECTIVE_GOPATH")
-    fi
-    if [ -z "$EFFECTIVE_GOPATH" ]; then
-        echo "Installation could not determine your \$GOPATH."
-        exit 1
-    fi
-    if [ -z "$GOBIN" ]; then
-        GOBIN=$(echo "${EFFECTIVE_GOPATH%%:*}/bin" | sed s#//*#/#g)
-    fi
-    if [ ! -d "$GOBIN" ]; then
-        echo "Installation requires your GOBIN directory $GOBIN to exist. Please create it."
-        exit 1
-    fi
-    eval "$1='$GOBIN'"
-}
+
+
 initArch() {
     ARCH=$(uname -m)
     if [ -n "$DEP_ARCH" ]; then
@@ -85,11 +68,7 @@ initOS() {
 initArch
 initOS
 
-# determine install directory if required
-if [ -z "$INSTALL_DIRECTORY" ]; then
-    findGoBinDirectory INSTALL_DIRECTORY
-fi
-echo "Will install into $INSTALL_DIRECTORY"
+echo "Will install into current directory"
 
 # assemble expected release artifact name
 if [ "${OS}" != "linux" ] && { [ "${ARCH}" = "ppc64" ] || [ "${ARCH}" = "ppc64le" ];}; then
@@ -103,12 +82,12 @@ jq_cmd=".assets[] | select(.name | endswith(\"${OS}_${ARCH}.tar.gz\")).browser_d
 BINARY_URL="$(curl -s $RELEASES_API | jq -r "${jq_cmd}")"
 
 #download binary
-curl -OL ${BINARY_URL}
 filename=$(basename $BINARY_URL)
+curl -OL ${BINARY_URL}
 tar xvfz ${filename}
 filename="linkchecker"
 chmod +x ${filename}
 
-echo "Moving executable to $INSTALL_DIRECTORY/$INSTALL_NAME"
-mv "$filename" "$INSTALL_DIRECTORY/$INSTALL_NAME"
+echo "Executable downloaded into current directory"
+
 

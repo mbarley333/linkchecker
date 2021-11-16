@@ -19,8 +19,9 @@ import (
 type Result struct {
 	ResponseCode  int
 	Url           string
-	Error         error
+	Problem       string
 	ReferringSite string
+	Status        Status
 }
 
 type LinkChecker struct {
@@ -33,6 +34,7 @@ type LinkChecker struct {
 	Domain      string
 	Ratelimiter *rate.Limiter
 	CheckLink   CheckLink
+	VerboseMode bool
 }
 
 type Option func(*LinkChecker) error
@@ -65,13 +67,20 @@ func WithBufferedChannelSize(size int) Option {
 	}
 }
 
+func WithVerboseMode() Option {
+	return func(l *LinkChecker) error {
+		l.VerboseMode = true
+		return nil
+	}
+}
+
 func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 
 	linkchecker := &LinkChecker{
 		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
-		Ratelimiter: rate.NewLimiter(2, 2),
+		Ratelimiter: rate.NewLimiter(10, 20),
 		Results:     make(chan Result, 1000),
 		CheckLink: CheckLink{
 			List: make(map[string]bool),
@@ -101,6 +110,26 @@ func CheckSiteLinks(site string, opts ...Option) <-chan Result {
 	}
 
 	return l.Results
+
+}
+
+func (l *LinkChecker) GetAllResults() []Result {
+
+	results := []Result{}
+
+	if l.VerboseMode {
+		for result := range l.Results {
+			results = append(results, result)
+		}
+	} else if !l.VerboseMode {
+		for result := range l.Results {
+			if result.Status != StatusUp {
+				results = append(results, result)
+			}
+		}
+	}
+
+	return results
 
 }
 
@@ -143,36 +172,62 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 		ReferringSite: referringSite,
 	}
 
-	_, err := l.IsHeaderAvailable(site)
-	if err != nil {
-		result.Error = err
-		l.Results <- result
-		return
-	}
-
-	resp, err := l.HTTPClient.Get(site)
-	if err != nil {
-		result.Error = err
-		l.Results <- result
-		return
-	}
-
-	result.ResponseCode = resp.StatusCode
-
-	u, err := url.Parse(site)
-	if err != nil {
-		result.Error = err
-		l.Results <- result
-		return
-	}
-
 	l.AddSite(site)
 
-	if u.Host != l.Domain {
+	// check headers
+	code, err := l.HeadStatus(site)
+	if err != nil {
+		result.Problem = err.Error()
+		result.Status = StatusDown
 		l.Results <- result
-
 		return
 	}
+
+	// check for http.StatusOK
+	if code != http.StatusOK {
+		result.Problem = "Non OK response"
+		result.ResponseCode = code
+		result.Status = StatusDown
+		l.Results <- result
+		return
+	}
+
+	// check if able to parse site
+	u, err := url.Parse(site)
+	if err != nil {
+		result.Problem = err.Error()
+		l.Results <- result
+		return
+	}
+
+	// external site
+	if u.Host != l.Domain {
+
+		result.Status = StatusUp
+		result.ResponseCode = code
+		l.Results <- result
+		return
+	}
+
+	request, err := http.NewRequest("GET", site, nil)
+	if err != nil {
+		fmt.Println(err)
+	}
+	request.Header.Set("user-agent", "linkchecker 0.3.12")
+	request.Header.Set("accept", "*/*")
+
+	resp, err := l.HTTPClient.Do(request)
+
+	//resp, err := l.HTTPClient.Get(site)
+	if err != nil {
+		result.Problem = err.Error()
+		result.Status = StatusDown
+		l.Results <- result
+		return
+	}
+
+	result.Status = StatusUp
+	result.ResponseCode = resp.StatusCode
 
 	l.Results <- result
 
@@ -205,7 +260,7 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 func (l *LinkChecker) GetResponse(site string) (*http.Response, error) {
 
-	_, err := l.IsHeaderAvailable(site)
+	_, err := l.HeadStatus(site)
 	if err != nil {
 		return nil, err
 	}
@@ -250,16 +305,25 @@ func IsHttpTypeLink(link string) bool {
 	return !strings.HasPrefix(strings.ToLower(link), "mailto:") && !strings.HasPrefix(strings.ToLower(link), "ftp:")
 }
 
-func (l *LinkChecker) IsHeaderAvailable(site string) (bool, error) {
+func (l *LinkChecker) HeadStatus(site string) (int, error) {
 
-	resp, err := l.HTTPClient.Head(site)
+	request, err := http.NewRequest("HEAD", site, nil)
 	if err != nil {
-		return false, err
+		fmt.Println(err)
+	}
+	request.Header.Set("user-agent", "linkchecker 0.3.12")
+	request.Header.Set("accept", "*/*")
+
+	resp, err := l.HTTPClient.Do(request)
+
+	//resp, err := l.HTTPClient.Head(site)
+	if err != nil {
+		return 0, err
 	}
 
 	defer resp.Body.Close()
 
-	return true, nil
+	return resp.StatusCode, nil
 }
 
 type CheckLink struct {
@@ -287,9 +351,7 @@ func (l *LinkChecker) AddSite(site string) {
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 
-	isUrl := false
 	newUrl := site
-	var err error
 
 	// if no initial scheme from Check, try https and http
 	if l.Scheme == "" {
@@ -299,12 +361,12 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 		for _, scheme := range schemes {
 			str := []string{scheme, "://", site}
 			newUrl = strings.Join(str, "")
-			isUrl, err = l.IsHeaderAvailable(newUrl)
+			code, err := l.HeadStatus(newUrl)
 			if err != nil {
 				fmt.Fprintf(l.errorLog, "unable to use https scheme for %s, %s", site, err)
 			}
 
-			if isUrl {
+			if code == http.StatusOK {
 				u, err := url.Parse(newUrl)
 				if err != nil {
 					fmt.Fprintf(l.errorLog, "unable to parse url %s, %s", newUrl, err)
@@ -416,7 +478,7 @@ func (r Result) String() string {
 
 	color := StatusColorMap[status]
 
-	str := []string{string(color), "URL: ", r.Url, " \nStatus: ", StatusStringMap[HttpStatusMap[r.ResponseCode]], "\nStatus Code: ", strconv.Itoa(r.ResponseCode), " \nReferring URL: ", r.ReferringSite, "\n", string(ColorReset)}
+	str := []string{string(color), "URL: ", r.Url, " \nStatus: ", r.Status.String(), "\nStatus Code: ", strconv.Itoa(r.ResponseCode), " \nProblem: ", r.Problem, "\nReferring URL: ", r.ReferringSite, "\n", string(ColorReset)}
 
 	return strings.Join(str, "")
 }
@@ -440,30 +502,17 @@ func RunCLI() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
-	done := make(chan bool)
-
-	go func() {
-
-		for {
-			r, more := <-l.Results
-			if more {
-				fmt.Println(r)
-
-			} else {
-				fmt.Println("received all results")
-				done <- true
-				return
-			}
-		}
-
-	}()
 
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	<-done
+	results := l.GetAllResults()
+
+	for _, result := range results {
+		fmt.Fprintln(l.output, result)
+	}
 
 }
 
