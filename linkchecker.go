@@ -81,7 +81,7 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
-		Ratelimiter: rate.NewLimiter(10, 20),
+		Ratelimiter: rate.NewLimiter(4, 4),
 		Results:     make(chan Result, 1000),
 		CheckLink: CheckLink{
 			List: make(map[string]bool),
@@ -187,10 +187,19 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	}
 
 	// check for http.StatusOK
-	if code != http.StatusOK {
-		result.Problem = "Non OK response"
+	if code == http.StatusTooManyRequests {
+		result.Problem = "Site rate limit exceeded"
 		result.ResponseCode = code
-		result.Status = StatusDown
+		result.Status = StatusRateLimited
+		l.Results <- result
+		return
+	}
+
+	// handle 999 error code
+	if code == 999 {
+		result.Problem = "Non standard error returned by external service"
+		result.ResponseCode = code
+		result.Status = Status999
 		l.Results <- result
 		return
 	}
@@ -214,15 +223,23 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	request, err := http.NewRequest("GET", site, nil)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(l.output, err)
 	}
-	request.Header.Set("user-agent", "linkchecker 0.3.12")
+	request.Header.Set("user-agent", "linkchecker")
 	request.Header.Set("accept", "*/*")
 
 	resp, err := l.HTTPClient.Do(request)
-
 	if err != nil {
 		result.Problem = err.Error()
+		result.Status = StatusDown
+		l.Results <- result
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		result.Problem = "Non OK response"
+		result.ResponseCode = resp.StatusCode
 		result.Status = StatusDown
 		l.Results <- result
 		return
@@ -289,22 +306,28 @@ func (l *LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 	for _, n := range list {
 		url := htmlquery.InnerText(n)
 
-		if IsHttpTypeLink(url) {
+		if l.IsLinkOkToAdd(url) {
 			url, err = l.CanonicaliseChildUrl(url)
 			if err != nil {
 				fmt.Fprintf(l.errorLog, "unable to canonicalise url: %s, %s", url, err)
 			}
+			sites = append(sites, url)
 		}
-		sites = append(sites, url)
 
 	}
 
 	return sites, nil
 }
 
-func IsHttpTypeLink(link string) bool {
+func (l *LinkChecker) IsLinkOkToAdd(link string) bool {
 
-	return !strings.HasPrefix(strings.ToLower(link), "mailto:") && !strings.HasPrefix(strings.ToLower(link), "ftp:")
+	u, err := url.Parse(link)
+	if err != nil {
+		fmt.Fprintln(l.output, err)
+	}
+
+	// filter out mailto:, ftp: and localhost type links
+	return !strings.HasPrefix(strings.ToLower(link), "mailto:") && !strings.HasPrefix(strings.ToLower(link), "ftp:") && !(u.Hostname() == "localhost" && !strings.HasPrefix(strings.ToLower(l.Domain), "localhost"))
 }
 
 func (l *LinkChecker) HeadStatus(site string) (int, error) {
@@ -429,6 +452,7 @@ var StatusStringMap = map[Status]string{
 	StatusUp:          "Up",
 	StatusDown:        "Down",
 	StatusRateLimited: "RateLimited",
+	Status999:         "Unable to verify",
 }
 
 func (s Status) String() string {
@@ -440,6 +464,7 @@ const (
 	StatusUp
 	StatusDown
 	StatusRateLimited
+	Status999
 )
 
 var HttpStatusMap = map[int]Status{
@@ -447,6 +472,7 @@ var HttpStatusMap = map[int]Status{
 	http.StatusOK:              StatusUp,
 	http.StatusCreated:         StatusUp,
 	http.StatusTooManyRequests: StatusRateLimited,
+	999:                        Status999,
 }
 
 type Color string
@@ -462,6 +488,7 @@ var StatusColorMap = map[Status]Color{
 	StatusUp:          ColorGreen,
 	StatusDown:        ColorRed,
 	StatusRateLimited: ColorYellow,
+	Status999:         ColorYellow,
 }
 
 func (r Result) String() string {
@@ -503,6 +530,8 @@ func RunCLI() {
 		fmt.Fprintln(os.Stderr, err)
 	}
 
+	defer l.elapsed("linkchecker")()
+
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
@@ -513,8 +542,6 @@ func RunCLI() {
 	for _, result := range results {
 		fmt.Fprintln(l.output, result)
 	}
-
-	fmt.Fprintln(l.output, "linkcheck completed")
 
 }
 
@@ -534,4 +561,11 @@ func help(cliArg string) {
 	Usage:
 	%s https://somewebpage123.com
 	`, arg)
+}
+
+func (l *LinkChecker) elapsed(what string) func() {
+	start := time.Now()
+	return func() {
+		fmt.Fprintf(l.output, "%s completed in %v\n", what, time.Since(start))
+	}
 }

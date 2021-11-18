@@ -52,13 +52,6 @@ func TestCheckVerbose(t *testing.T) {
 			Status:        linkchecker.StatusUp,
 		},
 		{
-			ResponseCode:  0,
-			Url:           "mailto:home",
-			ReferringSite: ts.URL,
-			Problem:       `Head "mailto:home": unsupported protocol scheme "mailto"`,
-			Status:        linkchecker.StatusDown,
-		},
-		{
 			ResponseCode:  http.StatusNotFound,
 			Url:           ts.URL + "/zzz",
 			ReferringSite: ts.URL + "/about",
@@ -97,13 +90,6 @@ func TestCheck(t *testing.T) {
 
 	want := []linkchecker.Result{
 
-		{
-			ResponseCode:  0,
-			Url:           "mailto:home",
-			ReferringSite: ts.URL,
-			Problem:       `Head "mailto:home": unsupported protocol scheme "mailto"`,
-			Status:        linkchecker.StatusDown,
-		},
 		{
 			ResponseCode:  http.StatusNotFound,
 			Url:           ts.URL + "/zzz",
