@@ -177,33 +177,6 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	l.AddSite(site)
 
-	// check headers
-	code, err := l.HeadStatus(site)
-	if err != nil {
-		result.Problem = err.Error()
-		result.Status = StatusDown
-		l.Results <- result
-		return
-	}
-
-	// check for http.StatusOK
-	if code == http.StatusTooManyRequests {
-		result.Problem = "Site rate limit exceeded"
-		result.ResponseCode = code
-		result.Status = StatusRateLimited
-		l.Results <- result
-		return
-	}
-
-	// handle 999 error code
-	if code == 999 {
-		result.Problem = "Non standard error returned by external service"
-		result.ResponseCode = code
-		result.Status = Status999
-		l.Results <- result
-		return
-	}
-
 	// check if able to parse site
 	u, err := url.Parse(site)
 	if err != nil {
@@ -212,30 +185,56 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 		return
 	}
 
+	// check head request first
+	code, err := l.HeadStatus(site)
+	if err != nil {
+		fmt.Fprintln(l.output, err)
+	}
+
+	if code == http.StatusTooManyRequests {
+		result.Problem = "Site rate limit exceeded"
+		result.ResponseCode = code
+		result.Status = StatusRateLimited
+		l.Results <- result
+		return
+	}
+
+	// handle non stardard 999 error code for linkedin
+	// and other services
+	if code == 999 && strings.Contains(u.Host, "linkedin.com") {
+		result.Problem = "linkedin is up, but rejects http requests"
+		result.ResponseCode = code
+		result.Status = StatusUp
+		l.Results <- result
+		return
+	} else if code == 999 {
+		result.Problem = "Non standard error returned by external service"
+		result.ResponseCode = code
+		result.Status = Status999
+		l.Results <- result
+		return
+	}
+
 	// external site
 	if u.Host != l.Domain {
-
 		result.Status = StatusUp
 		result.ResponseCode = code
 		l.Results <- result
 		return
 	}
 
-	request, err := http.NewRequest("GET", site, nil)
+	resp, err := l.GetResponse(site)
 	if err != nil {
 		fmt.Fprintln(l.output, err)
 	}
-	request.Header.Set("user-agent", "linkchecker")
-	request.Header.Set("accept", "*/*")
+	defer resp.Body.Close()
 
-	resp, err := l.HTTPClient.Do(request)
 	if err != nil {
 		result.Problem = err.Error()
 		result.Status = StatusDown
 		l.Results <- result
 		return
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		result.Problem = "Non OK response"
@@ -260,7 +259,6 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	for _, link := range links {
 
 		if !l.IsCrawled(link) {
-
 			ctx := context.Background()
 			err := l.Ratelimiter.Wait(ctx)
 
@@ -270,27 +268,8 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 				fmt.Fprintln(l.errorLog, err)
 			}
 			go l.Crawl(link, site)
-
 		}
-
 	}
-
-}
-
-func (l *LinkChecker) GetResponse(site string) (*http.Response, error) {
-
-	_, err := l.HeadStatus(site)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := l.HTTPClient.Get(site)
-	if err != nil {
-
-		return resp, err
-	}
-
-	return resp, nil
 }
 
 func (l *LinkChecker) ParseBody(body io.Reader) ([]string, error) {
@@ -313,9 +292,7 @@ func (l *LinkChecker) ParseBody(body io.Reader) ([]string, error) {
 			}
 			sites = append(sites, url)
 		}
-
 	}
-
 	return sites, nil
 }
 
@@ -330,9 +307,9 @@ func (l *LinkChecker) IsLinkOkToAdd(link string) bool {
 	return !strings.HasPrefix(strings.ToLower(link), "mailto:") && !strings.HasPrefix(strings.ToLower(link), "ftp:") && !(u.Hostname() == "localhost" && !strings.HasPrefix(strings.ToLower(l.Domain), "localhost"))
 }
 
-func (l *LinkChecker) HeadStatus(site string) (int, error) {
+func (l *LinkChecker) HeadStatus(link string) (int, error) {
 
-	request, err := http.NewRequest("HEAD", site, nil)
+	request, err := http.NewRequest(http.MethodHead, link, nil)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -348,6 +325,24 @@ func (l *LinkChecker) HeadStatus(site string) (int, error) {
 	defer resp.Body.Close()
 
 	return resp.StatusCode, nil
+}
+
+func (l *LinkChecker) GetResponse(link string) (*http.Response, error) {
+
+	request, err := http.NewRequest(http.MethodGet, link, nil)
+	if err != nil {
+		fmt.Fprintln(l.output, err)
+	}
+	request.Header.Set("user-agent", "linkchecker")
+	request.Header.Set("accept", "*/*")
+
+	resp, err := l.HTTPClient.Do(request)
+
+	if err != nil {
+		return &http.Response{}, err
+	}
+
+	return resp, nil
 }
 
 type CheckLink struct {
@@ -370,7 +365,6 @@ func (l *LinkChecker) AddSite(site string) {
 	l.CheckLink.mutex.Lock()
 	defer l.CheckLink.mutex.Unlock()
 	l.CheckLink.List[site] = true
-
 }
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
@@ -401,9 +395,7 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 			}
 
 		}
-
 	}
-
 	return newUrl, nil
 }
 
@@ -434,6 +426,13 @@ func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
 	}
 
 	return canonical, nil
+}
+
+func (l *LinkChecker) elapsed(what string) func() {
+	start := time.Now()
+	return func() {
+		fmt.Fprintf(l.output, "%s completed in %v\n", what, time.Since(start))
+	}
 }
 
 func RemoveLeadingSlash(site string) string {
@@ -542,7 +541,6 @@ func RunCLI() {
 	for _, result := range results {
 		fmt.Fprintln(l.output, result)
 	}
-
 }
 
 func help(cliArg string) {
@@ -561,11 +559,4 @@ func help(cliArg string) {
 	Usage:
 	%s https://somewebpage123.com
 	`, arg)
-}
-
-func (l *LinkChecker) elapsed(what string) func() {
-	start := time.Now()
-	return func() {
-		fmt.Fprintf(l.output, "%s completed in %v\n", what, time.Since(start))
-	}
 }
