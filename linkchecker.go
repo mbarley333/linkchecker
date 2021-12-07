@@ -17,25 +17,23 @@ import (
 	"golang.org/x/time/rate"
 )
 
-type Result struct {
-	ResponseCode  int
-	Url           string
-	Problem       string
-	ReferringSite string
-	Status        Status
-}
-
 type LinkChecker struct {
+	// exported fields user wants
+	Domain string
+	Scheme string
+
+	// exported fields needed for testing
 	HTTPClient  *http.Client
-	Wg          sync.WaitGroup
-	Results     chan Result
+	ProgressBar *Bar
+
+	// unexported
+	results     chan Result
+	wg          sync.WaitGroup
 	output      io.Writer
 	errorLog    io.Writer
-	Scheme      string
-	Domain      string
-	Ratelimiter *rate.Limiter
-	CheckLink   CheckLink
-	VerboseMode bool
+	checkLink   CheckLink
+	verboseMode bool
+	ratelimiter *rate.Limiter
 }
 
 type Option func(*LinkChecker) error
@@ -56,21 +54,30 @@ func WithErrorLog(errorLog io.Writer) Option {
 
 func WithConfigureRatelimiter(ratePerSec rate.Limit, burst int) Option {
 	return func(l *LinkChecker) error {
-		l.Ratelimiter = rate.NewLimiter(ratePerSec, burst)
+		l.ratelimiter = rate.NewLimiter(ratePerSec, burst)
 		return nil
 	}
 }
 
 func WithBufferedChannelSize(size int) Option {
 	return func(l *LinkChecker) error {
-		l.Results = make(chan Result, size)
+		l.results = make(chan Result, size)
 		return nil
 	}
 }
 
 func WithVerboseMode() Option {
 	return func(l *LinkChecker) error {
-		l.VerboseMode = true
+		l.verboseMode = true
+		return nil
+	}
+}
+
+func WithProgressBar() Option {
+	return func(l *LinkChecker) error {
+		l.ProgressBar = NewBar(
+			WithOutputBar(l.output),
+		)
 		return nil
 	}
 }
@@ -81,10 +88,10 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		HTTPClient:  &http.Client{Timeout: 10 * time.Second},
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
-		Ratelimiter: rate.NewLimiter(4, 4),
-		Results:     make(chan Result, 1000),
-		CheckLink: CheckLink{
-			List: make(map[string]bool),
+		ratelimiter: rate.NewLimiter(2, 2),
+		results:     make(chan Result, 1000),
+		checkLink: CheckLink{
+			list: make(map[string]bool),
 		},
 	}
 
@@ -95,35 +102,21 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 	return linkchecker, nil
 }
 
-func CheckSiteLinks(site string, opts ...Option) <-chan Result {
-	l, err := NewLinkChecker()
-	for _, o := range opts {
-		o(l)
-	}
+func (l *LinkChecker) StreamResults() <-chan Result {
 
-	if err != nil {
-		fmt.Fprintf(l.errorLog, "unable to create linkchecker struct, %s", err)
-	}
-
-	err = l.Check(site)
-	if err != nil {
-		fmt.Fprint(l.errorLog, err)
-	}
-
-	return l.Results
-
+	return l.results
 }
 
 func (l *LinkChecker) GetAllResults() []Result {
 
 	results := []Result{}
 
-	if l.VerboseMode {
-		for result := range l.Results {
+	if l.verboseMode {
+		for result := range l.results {
 			results = append(results, result)
 		}
-	} else if !l.VerboseMode {
-		for result := range l.Results {
+	} else if !l.verboseMode {
+		for result := range l.results {
 			if result.Status != StatusUp {
 				results = append(results, result)
 			}
@@ -152,11 +145,16 @@ func (l *LinkChecker) Check(site string) error {
 
 	referringSite := canonicalSite
 
-	l.Wg.Add(1)
-	go l.Crawl(canonicalSite, referringSite)
-	l.Wg.Wait()
+	// check if progress bar enabled in LinkChecker struct
+	// if l.ProgressBar != nil {
+	// 	l.ProgressBar.Add()
+	// }
 
-	close(l.Results)
+	l.wg.Add(1)
+	go l.Crawl(canonicalSite, referringSite)
+	l.wg.Wait()
+
+	close(l.results)
 
 	return nil
 
@@ -164,7 +162,7 @@ func (l *LinkChecker) Check(site string) error {
 
 func (l *LinkChecker) Crawl(site string, referringSite string) {
 
-	defer l.Wg.Done()
+	defer l.wg.Done()
 
 	if l.IsCrawled(site) {
 		return
@@ -177,11 +175,16 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	l.AddSite(site)
 
+	// check if progress bar enabled in LinkChecker struct
+	// if l.ProgressBar != nil {
+	// 	l.ProgressBar.Completed()
+	// }
+
 	// check if able to parse site
 	u, err := url.Parse(site)
 	if err != nil {
 		result.Problem = err.Error()
-		l.Results <- result
+		l.results <- result
 		return
 	}
 
@@ -195,7 +198,7 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 		result.Problem = "Site rate limit exceeded"
 		result.ResponseCode = code
 		result.Status = StatusRateLimited
-		l.Results <- result
+		l.results <- result
 		return
 	}
 
@@ -205,49 +208,46 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 		result.Problem = "linkedin is up, but rejects http requests"
 		result.ResponseCode = code
 		result.Status = StatusUp
-		l.Results <- result
+		l.results <- result
 		return
 	} else if code == 999 {
 		result.Problem = "Non standard error returned by external service"
 		result.ResponseCode = code
 		result.Status = Status999
-		l.Results <- result
-		return
-	}
-
-	// external site
-	if u.Host != l.Domain {
-		result.Status = StatusUp
-		result.ResponseCode = code
-		l.Results <- result
+		l.results <- result
 		return
 	}
 
 	resp, err := l.GetResponse(site)
 	if err != nil {
 		fmt.Fprintln(l.output, err)
-	}
-	defer resp.Body.Close()
-
-	if err != nil {
 		result.Problem = err.Error()
 		result.Status = StatusDown
-		l.Results <- result
+		l.results <- result
 		return
 	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		result.Problem = "Non OK response"
 		result.ResponseCode = resp.StatusCode
 		result.Status = StatusDown
-		l.Results <- result
+		l.results <- result
+		return
+	}
+
+	// external site
+	if u.Host != l.Domain {
+		result.Status = StatusUp
+		result.ResponseCode = resp.StatusCode
+		l.results <- result
 		return
 	}
 
 	result.Status = StatusUp
 	result.ResponseCode = resp.StatusCode
 
-	l.Results <- result
+	l.results <- result
 
 	// generate of list of links on page
 	links, err := l.ParseBody(resp.Body)
@@ -259,10 +259,16 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	for _, link := range links {
 
 		if !l.IsCrawled(link) {
-			ctx := context.Background()
-			err := l.Ratelimiter.Wait(ctx)
 
-			l.Wg.Add(1)
+			// check if progress bar enabled in LinkChecker struct
+			// if l.ProgressBar != nil {
+			// 	l.ProgressBar.Add()
+			// }
+
+			ctx := context.Background()
+			err := l.ratelimiter.Wait(ctx)
+
+			l.wg.Add(1)
 
 			if err != nil {
 				fmt.Fprintln(l.errorLog, err)
@@ -347,24 +353,24 @@ func (l *LinkChecker) GetResponse(link string) (*http.Response, error) {
 
 type CheckLink struct {
 	mutex sync.RWMutex
-	List  map[string]bool
+	list  map[string]bool
 }
 
 func (l *LinkChecker) IsCrawled(site string) bool {
 
-	l.CheckLink.mutex.RLock()
-	defer l.CheckLink.mutex.RUnlock()
+	l.checkLink.mutex.RLock()
+	defer l.checkLink.mutex.RUnlock()
 
-	result := l.CheckLink.List[site]
+	result := l.checkLink.list[site]
 
 	return result
 }
 
 func (l *LinkChecker) AddSite(site string) {
 
-	l.CheckLink.mutex.Lock()
-	defer l.CheckLink.mutex.Unlock()
-	l.CheckLink.List[site] = true
+	l.checkLink.mutex.Lock()
+	defer l.checkLink.mutex.Unlock()
+	l.checkLink.list[site] = true
 }
 
 func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
@@ -433,6 +439,34 @@ func (l *LinkChecker) elapsed(what string) func() {
 	return func() {
 		fmt.Fprintf(l.output, "%s completed in %v\n", what, time.Since(start))
 	}
+}
+
+// Result is a struct that contains the status code and url of a link
+type Result struct {
+	ResponseCode  int
+	Url           string
+	Problem       string
+	ReferringSite string
+	Status        Status
+}
+
+func CheckSiteLinks(site string, opts ...Option) <-chan Result {
+	l, err := NewLinkChecker()
+	for _, o := range opts {
+		o(l)
+	}
+
+	if err != nil {
+		fmt.Fprintf(l.errorLog, "unable to create linkchecker struct, %s", err)
+	}
+
+	err = l.Check(site)
+	if err != nil {
+		fmt.Fprint(l.errorLog, err)
+	}
+
+	return l.results
+
 }
 
 func RemoveLeadingSlash(site string) string {
@@ -531,16 +565,30 @@ func RunCLI() {
 
 	defer l.elapsed("linkchecker")()
 
+	// go l.ProgressBar.Refresher()
+	// go func() {
+	// 	for l.ProgressBar.GetPercent() < 100 {
+	// 		time.Sleep(10 * time.Millisecond)
+	// 		fmt.Println("here")
+	// 		l.ProgressBar.Render()
+	// 	}
+	// }()
+
+	go func() {
+		for result := range l.StreamResults() {
+			fmt.Fprintln(l.output, result)
+		}
+	}()
+
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	results := l.GetAllResults()
+	//<-l.ProgressBar.Done
 
-	for _, result := range results {
-		fmt.Fprintln(l.output, result)
-	}
+	fmt.Println("done")
+
 }
 
 func help(cliArg string) {

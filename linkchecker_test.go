@@ -1,6 +1,8 @@
 package linkchecker_test
 
 import (
+	"bytes"
+	"linkchecker"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,7 +11,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/mbarley333/linkchecker"
 )
 
 func TestCheckVerbose(t *testing.T) {
@@ -61,6 +62,72 @@ func TestCheckVerbose(t *testing.T) {
 	}
 
 	got := l.GetAllResults()
+
+	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
+		return x.Url < y.Url
+	})) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+
+}
+
+func TestStreamResults(t *testing.T) {
+
+	t.Parallel()
+
+	fs := http.FileServer(http.Dir("./testdata"))
+
+	ts := httptest.NewTLSServer(fs)
+
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.HTTPClient = ts.Client()
+
+	err = l.Check(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := []linkchecker.Result{
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL,
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusUp,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/about",
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusUp,
+		},
+		{
+			ResponseCode:  http.StatusOK,
+			Url:           ts.URL + "/home",
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusUp,
+		},
+		{
+			ResponseCode:  http.StatusNotFound,
+			Url:           ts.URL + "/zzz",
+			ReferringSite: ts.URL + "/about",
+			Status:        linkchecker.StatusDown,
+			Problem:       "Non OK response",
+		},
+	}
+
+	// compile only test, can use for interface testing
+	var results <-chan linkchecker.Result
+
+	results = l.StreamResults()
+
+	var got []linkchecker.Result
+
+	for result := range results {
+		got = append(got, result)
+	}
 
 	if !cmp.Equal(want, got, cmpopts.SortSlices(func(x, y linkchecker.Result) bool {
 		return x.Url < y.Url
@@ -254,6 +321,68 @@ func TestRemoveLeadingSlashes(t *testing.T) {
 
 	if want != got {
 		t.Fatalf("want: %s, got: %s", want, got)
+	}
+
+}
+
+func TestErrorHandling(t *testing.T) {
+	t.Parallel()
+
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	site := "https://boguswebsite/home"
+
+	want := linkchecker.Result{
+		Url:           "https://boguswebsite/home",
+		Status:        linkchecker.StatusDown,
+		Problem:       `Get "https://boguswebsite/home": dial tcp: lookup boguswebsite: no such host`,
+		ReferringSite: "https://boguswebsite/home",
+	}
+
+	err = l.Check(site)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	got := <-l.StreamResults()
+
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+
+}
+
+func TestProgressBarIntegration(t *testing.T) {
+	t.Parallel()
+
+	fs := http.FileServer(http.Dir("./testdata"))
+
+	ts := httptest.NewTLSServer(fs)
+
+	output := &bytes.Buffer{}
+
+	l, err := linkchecker.NewLinkChecker(
+		linkchecker.WithOutput(output),
+		linkchecker.WithProgressBar(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.HTTPClient = ts.Client()
+
+	err = l.Check(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := 100.0
+	got := l.ProgressBar.GetPercent()
+
+	if want != got {
+		t.Fatalf("want: %v, got %v", want, got)
 	}
 
 }
