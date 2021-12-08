@@ -146,9 +146,9 @@ func (l *LinkChecker) Check(site string) error {
 	referringSite := canonicalSite
 
 	// check if progress bar enabled in LinkChecker struct
-	// if l.ProgressBar != nil {
-	// 	l.ProgressBar.Add()
-	// }
+	if l.ProgressBar != nil {
+		l.ProgressBar.Add()
+	}
 
 	l.wg.Add(1)
 	go l.Crawl(canonicalSite, referringSite)
@@ -164,6 +164,11 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	defer l.wg.Done()
 
+	// check if progress bar enabled in LinkChecker struct
+	if l.ProgressBar != nil {
+		l.ProgressBar.Completed()
+	}
+
 	if l.IsCrawled(site) {
 		return
 	}
@@ -174,11 +179,6 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	}
 
 	l.AddSite(site)
-
-	// check if progress bar enabled in LinkChecker struct
-	// if l.ProgressBar != nil {
-	// 	l.ProgressBar.Completed()
-	// }
 
 	// check if able to parse site
 	u, err := url.Parse(site)
@@ -191,7 +191,7 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	// check head request first
 	code, err := l.HeadStatus(site)
 	if err != nil {
-		fmt.Fprintln(l.output, err)
+		fmt.Fprintln(l.errorLog, err)
 	}
 
 	if code == http.StatusTooManyRequests {
@@ -220,7 +220,7 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	resp, err := l.GetResponse(site)
 	if err != nil {
-		fmt.Fprintln(l.output, err)
+		fmt.Fprintln(l.errorLog, err)
 		result.Problem = err.Error()
 		result.Status = StatusDown
 		l.results <- result
@@ -261,9 +261,9 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 		if !l.IsCrawled(link) {
 
 			// check if progress bar enabled in LinkChecker struct
-			// if l.ProgressBar != nil {
-			// 	l.ProgressBar.Add()
-			// }
+			if l.ProgressBar != nil {
+				l.ProgressBar.Add()
+			}
 
 			ctx := context.Background()
 			err := l.ratelimiter.Wait(ctx)
@@ -306,7 +306,7 @@ func (l *LinkChecker) IsLinkOkToAdd(link string) bool {
 
 	u, err := url.Parse(link)
 	if err != nil {
-		fmt.Fprintln(l.output, err)
+		fmt.Fprintln(l.errorLog, err)
 	}
 
 	// filter out mailto:, ftp: and localhost type links
@@ -337,7 +337,7 @@ func (l *LinkChecker) GetResponse(link string) (*http.Response, error) {
 
 	request, err := http.NewRequest(http.MethodGet, link, nil)
 	if err != nil {
-		fmt.Fprintln(l.output, err)
+		fmt.Fprintln(l.errorLog, err)
 	}
 	request.Header.Set("user-agent", "linkchecker")
 	request.Header.Set("accept", "*/*")
@@ -437,7 +437,7 @@ func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
 func (l *LinkChecker) elapsed(what string) func() {
 	start := time.Now()
 	return func() {
-		fmt.Fprintf(l.output, "%s completed in %v\n", what, time.Since(start))
+		fmt.Fprintf(l.output, "\n%s completed in %v\n", what, time.Since(start))
 	}
 }
 
@@ -558,36 +558,40 @@ func RunCLI() {
 		os.Exit(0)
 	}
 
-	l, err := NewLinkChecker()
+	l, err := NewLinkChecker(
+		WithProgressBar(),
+	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 	}
 
 	defer l.elapsed("linkchecker")()
 
-	// go l.ProgressBar.Refresher()
+	go l.ProgressBar.Refresher()
+
 	// go func() {
-	// 	for l.ProgressBar.GetPercent() < 100 {
-	// 		time.Sleep(10 * time.Millisecond)
-	// 		fmt.Println("here")
-	// 		l.ProgressBar.Render()
+	// 	for result := range l.StreamResults() {
+	// 		fmt.Fprintln(l.output, result)
 	// 	}
 	// }()
-
-	go func() {
-		for result := range l.StreamResults() {
-			fmt.Fprintln(l.output, result)
-		}
-	}()
 
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	//<-l.ProgressBar.Done
+	<-l.ProgressBar.Done
 
-	fmt.Println("done")
+	for result := range l.StreamResults() {
+		if !l.verboseMode {
+			if result.Status != StatusUp {
+				fmt.Fprintln(l.output, result)
+			}
+		} else {
+			fmt.Fprintln(l.output, result)
+		}
+
+	}
 
 }
 

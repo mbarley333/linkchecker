@@ -67,7 +67,7 @@ func (b *Bar) GetPercent() float64 {
 func (b *Bar) Render() {
 
 	f := b.GetPercent()
-	fmt.Fprintf(b.output, "\r%s%% completed", strconv.FormatFloat(f, 'f', 1, 64))
+	fmt.Fprintf(b.output, "\r%s%% complete        %d / %d", strconv.FormatFloat(f, 'f', 1, 64), b.CompletedSteps, b.TotalSteps)
 
 }
 
@@ -77,8 +77,7 @@ func (b *Bar) Refresher() {
 		select {
 		case b.Done <- true:
 			return
-		case <-time.After(1 * time.Second):
-			fmt.Println("ggggggg")
+		case <-time.After(100 * time.Millisecond):
 			b.Render()
 		}
 	}
