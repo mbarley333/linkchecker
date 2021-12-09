@@ -317,13 +317,12 @@ func (l *LinkChecker) HeadStatus(link string) (int, error) {
 
 	request, err := http.NewRequest(http.MethodHead, link, nil)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(l.errorLog, err)
 	}
 	request.Header.Set("user-agent", "linkchecker")
 	request.Header.Set("accept", "*/*")
 
 	resp, err := l.HTTPClient.Do(request)
-
 	if err != nil {
 		return 0, err
 	}
@@ -569,18 +568,13 @@ func RunCLI() {
 
 	go l.ProgressBar.Refresher()
 
-	// go func() {
-	// 	for result := range l.StreamResults() {
-	// 		fmt.Fprintln(l.output, result)
-	// 	}
-	// }()
-
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	<-l.ProgressBar.Done
+	// signal done on Done channel of ProgressBar
+	<-l.ProgressBar.done
 
 	for result := range l.StreamResults() {
 		if !l.verboseMode {

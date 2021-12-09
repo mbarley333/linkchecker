@@ -13,7 +13,7 @@ type Bar struct {
 	TotalSteps     int
 	CompletedSteps int
 
-	Done chan bool
+	done chan bool
 
 	mutex  sync.RWMutex
 	output io.Writer
@@ -30,7 +30,7 @@ func WithOutputBar(output io.Writer) OptionBar {
 
 func NewBar(opts ...OptionBar) *Bar {
 	bar := &Bar{
-		Done:   make(chan bool),
+		done:   make(chan bool),
 		output: os.Stdout,
 	}
 
@@ -75,7 +75,7 @@ func (b *Bar) Render() {
 func (b *Bar) Refresher() {
 	for {
 		select {
-		case b.Done <- true:
+		case b.done <- true:
 			return
 		case <-time.After(100 * time.Millisecond):
 			b.Render()
