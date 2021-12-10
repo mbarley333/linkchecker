@@ -2,6 +2,7 @@ package linkchecker
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -52,9 +53,17 @@ func WithErrorLog(errorLog io.Writer) Option {
 	}
 }
 
-func WithConfigureRatelimiter(ratePerSec rate.Limit, burst int) Option {
+// func WithConfigureRatelimiter(ratePerSec rate.Limit, burst int) Option {
+// 	return func(l *LinkChecker) error {
+// 		l.ratelimiter = rate.NewLimiter(ratePerSec, burst)
+// 		return nil
+// 	}
+// }
+
+func WithLinkcheckerSpeed(speed string) Option {
 	return func(l *LinkChecker) error {
-		l.ratelimiter = rate.NewLimiter(ratePerSec, burst)
+		result := GetCheckSpeed(speed)
+		l.ratelimiter = rate.NewLimiter(rate.Limit(result.Rate), result.Burst)
 		return nil
 	}
 }
@@ -545,7 +554,13 @@ func (r Result) String() string {
 // CLI
 func RunCLI() {
 
-	if len(os.Args) < 2 {
+	flagSet := flag.NewFlagSet("flags", flag.ExitOnError)
+	speed := flagSet.String("speed", "normal", "optional flag to set linkchecker speed.  must select slow, normal, fast, furious or warp if using flag.  defaults to normal speed.")
+	flagSet.Parse(os.Args[2:])
+
+	_, ok := CheckSpeedFromStringMap[strings.ToLower(*speed)]
+
+	if len(os.Args) < 2 || !ok {
 		help(os.Args[0])
 		os.Exit(1)
 	}
@@ -559,6 +574,7 @@ func RunCLI() {
 
 	l, err := NewLinkChecker(
 		WithProgressBar(),
+		WithLinkcheckerSpeed(strings.ToLower(*speed)),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -600,9 +616,55 @@ func help(cliArg string) {
 
 	fmt.Fprintf(os.Stderr, `
 	Description:
-	  linkchecker will crawl a site and return the status of each link on the site
+	  Linkchecker will crawl a site and return the status of each link on the site. 
+	  Use the optional -speed flag to set linkchecker speed.  Please note that sites
+	  may have ratelimiter(s) and using linkchecker might trigger those ratelimiters.
+	
+	Flags:
+	 speed: optional flag to set linkchecker speed.  must select slow, normal, fast, furious or warp if using flag.  defaults to normal speed.
 	
 	Usage:
-	%s https://somewebpage123.com
+	%s https://somewebpage123.com -speed fast
 	`, arg)
+}
+
+type CheckSpeed int
+
+const (
+	CheckSpeedNone CheckSpeed = iota
+	CheckSpeedSlow
+	CheckSpeedNormal
+	CheckSpeedFast
+	CheckSpeedFurious
+	CheckSpeedWarp
+)
+
+var CheckSpeedFromStringMap = map[string]CheckSpeed{
+	"slow":    CheckSpeedSlow,
+	"normal":  CheckSpeedNormal,
+	"fast":    CheckSpeedFast,
+	"furious": CheckSpeedFurious,
+	"warp":    CheckSpeedWarp,
+}
+
+type LinkcheckSpeed struct {
+	Rate  int
+	Burst int
+}
+
+var CheckSpeedMap = map[CheckSpeed]LinkcheckSpeed{
+	CheckSpeedSlow:    {Rate: 1, Burst: 1},
+	CheckSpeedNormal:  {Rate: 2, Burst: 2},
+	CheckSpeedFast:    {Rate: 10, Burst: 10},
+	CheckSpeedFurious: {Rate: 20, Burst: 20},
+	CheckSpeedWarp:    {Rate: 100, Burst: 100},
+}
+
+func GetCheckSpeed(speed string) LinkcheckSpeed {
+
+	result := CheckSpeedMap[CheckSpeedFromStringMap[speed]]
+
+	fmt.Print(result)
+
+	return result
 }

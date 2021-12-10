@@ -386,3 +386,17 @@ func TestProgressBarIntegration(t *testing.T) {
 	}
 
 }
+
+func TestSetCheckSpeed(t *testing.T) {
+	t.Parallel()
+
+	want := linkchecker.LinkcheckSpeed{
+		Rate:  1,
+		Burst: 1,
+	}
+	got := linkchecker.GetCheckSpeed("slow")
+
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+}
