@@ -617,14 +617,14 @@ func help(cliArg string) {
 	fmt.Fprintf(os.Stderr, `
 	Description:
 	  Linkchecker will crawl a site and return the status of each link on the site. 
-	  Use the optional -speed flag to set linkchecker speed.  Please note that sites
-	  may have ratelimiter(s) and using linkchecker might trigger those ratelimiters.
+	  Use the optional -speed flag to set linkchecker speed.  Please note that using linkchecker 
+	  may trigger site ratelimiters return error codes in your results.
 	
 	Flags:
 	 speed: optional flag to set linkchecker speed.  must select slow, normal, fast, furious or warp if using flag.  defaults to normal speed.
 	
 	Usage:
-	%s https://somewebpage123.com -speed fast
+	%s https://somewebpage123.com -speed normal
 	`, arg)
 }
 
