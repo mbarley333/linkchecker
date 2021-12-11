@@ -328,7 +328,9 @@ func TestRemoveLeadingSlashes(t *testing.T) {
 func TestErrorHandling(t *testing.T) {
 	t.Parallel()
 
-	l, err := linkchecker.NewLinkChecker()
+	l, err := linkchecker.NewLinkChecker(
+		linkchecker.WithSilentMode(),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

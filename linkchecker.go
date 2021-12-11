@@ -53,17 +53,17 @@ func WithErrorLog(errorLog io.Writer) Option {
 	}
 }
 
-// func WithConfigureRatelimiter(ratePerSec rate.Limit, burst int) Option {
-// 	return func(l *LinkChecker) error {
-// 		l.ratelimiter = rate.NewLimiter(ratePerSec, burst)
-// 		return nil
-// 	}
-// }
-
 func WithLinkcheckerSpeed(speed string) Option {
 	return func(l *LinkChecker) error {
 		result := GetCheckSpeed(speed)
 		l.ratelimiter = rate.NewLimiter(rate.Limit(result.Rate), result.Burst)
+		return nil
+	}
+}
+
+func WithConfigureRatelimiter(ratePerSec rate.Limit, burst int) Option {
+	return func(l *LinkChecker) error {
+		l.ratelimiter = rate.NewLimiter(ratePerSec, burst)
 		return nil
 	}
 }
@@ -78,6 +78,13 @@ func WithBufferedChannelSize(size int) Option {
 func WithVerboseMode() Option {
 	return func(l *LinkChecker) error {
 		l.verboseMode = true
+		return nil
+	}
+}
+
+func WithSilentMode() Option {
+	return func(l *LinkChecker) error {
+		l.errorLog = io.Discard
 		return nil
 	}
 }
@@ -661,10 +668,5 @@ var CheckSpeedMap = map[CheckSpeed]LinkcheckSpeed{
 }
 
 func GetCheckSpeed(speed string) LinkcheckSpeed {
-
-	result := CheckSpeedMap[CheckSpeedFromStringMap[speed]]
-
-	fmt.Print(result)
-
-	return result
+	return CheckSpeedMap[CheckSpeedFromStringMap[speed]]
 }
