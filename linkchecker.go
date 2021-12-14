@@ -588,11 +588,16 @@ func RunCLI() {
 	furious := flagSet.Bool("furious", false, "linkchecker rate set to 20 requests per second")
 	warp := flagSet.Bool("warp", false, "linkchecker rate set to 100 requests per second")
 
+	if len(os.Args) < 2 {
+		help(os.Args[0])
+		os.Exit(1)
+	}
+
 	flagSet.Parse(os.Args[2:])
 
 	var speed CheckSpeed
 
-	if *normal {
+	if *normal || len(os.Args) < 3 {
 		speed = CheckSpeedNormal
 	} else if *slow {
 		speed = CheckSpeedSlow
@@ -604,16 +609,10 @@ func RunCLI() {
 		speed = CheckSpeedWarp
 	}
 
-	//_, ok := CheckSpeedFromStringMap[strings.ToLower(speed)]
 	_, ok := CheckSpeedMap[speed]
 
-	if len(os.Args) < 2 || !ok {
-		help(os.Args[0])
-		os.Exit(1)
-	}
-
 	site := os.Args[1]
-	if site == "help" {
+	if site == "help" || !ok {
 		fmt.Println(os.Args[0])
 		help(os.Args[0])
 		os.Exit(0)
@@ -665,14 +664,18 @@ func help(cliArg string) {
 	fmt.Fprintf(os.Stderr, `
 	Description:
 	  Linkchecker will crawl a site and return the status of each link on the site. 
-	  Use the optional -speed flag to set linkchecker speed.  Please note that using linkchecker 
+	  Use the optional flags to set linkchecker speed.  Please note that using linkchecker 
 	  may trigger site ratelimiters if ratelimter thresholds are exceeded by linkchecker speed settings.
 	
 	Flags:
-	 speed: optional flag to set linkchecker speed.  must select slow, normal, fast, furious or warp if using flag.  defaults to normal speed.
-	
+	  -normal: sets the linkchecker rate set to 2 request per second.  default speed if no flag is used.
+	  -slow: sets the linkchecker rate set to 1 request per second.
+	  -fast: sets the linkchecker rate set to 10 requests per second.
+	  -furious: sets the linkchecker rate set to 20 requests per second.
+	  -warp: sets the linkchecker rate set to 100 requests per second.
+
 	Usage:
-	%s https://somewebpage123.com -speed normal
+	%s https://somewebpage123.com
 	`, arg)
 }
 
