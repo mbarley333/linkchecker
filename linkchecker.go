@@ -2,7 +2,6 @@ package linkchecker
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -209,7 +208,8 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	code, err := l.HeadStatus(site)
 	if err != nil {
 
-		if errors.Is(err, context.DeadlineExceeded) {
+		fmt.Printf("%#v", err)
+		if IsTimeout(err) {
 			result.Problem = "Client.Timeout exceeded while awaiting headers"
 			result.Status = StatusRateLimited
 		} else {
@@ -248,11 +248,18 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	resp, err := l.GetResponse(site)
 	if err != nil {
-		fmt.Fprintln(l.errorLog, err)
-		result.Problem = err.Error()
-		result.Status = StatusDown
+		if IsTimeout(err) {
+			result.Problem = "Client.Timeout exceeded while awaiting headers"
+			result.Status = StatusRateLimited
+		} else {
+			result.Problem = err.Error()
+			result.Status = StatusDown
+		}
+
+		//result.ResponseCode = code
 		l.results <- result
 		return
+
 	}
 	defer resp.Body.Close()
 
@@ -603,24 +610,25 @@ func RunCLI() {
 
 	go l.ProgressBar.Refresher()
 
+	go func() {
+		for result := range l.StreamResults() {
+			if !l.verboseMode {
+				if result.Status != StatusUp {
+					fmt.Fprintln(l.output, result)
+				}
+			} else {
+				fmt.Fprintln(l.output, result)
+			}
+
+		}
+	}()
+
 	err = l.Check(site)
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	// signal done on Done channel of ProgressBar
-	<-l.ProgressBar.done
-
-	for result := range l.StreamResults() {
-		if !l.verboseMode {
-			if result.Status != StatusUp {
-				fmt.Fprintln(l.output, result)
-			}
-		} else {
-			fmt.Fprintln(l.output, result)
-		}
-
-	}
+	close(l.ProgressBar.done)
 
 }
 
@@ -681,4 +689,17 @@ var CheckSpeedMap = map[CheckSpeed]LinkcheckSpeed{
 
 func GetCheckSpeed(speed string) LinkcheckSpeed {
 	return CheckSpeedMap[CheckSpeedFromStringMap[speed]]
+}
+
+func IsTimeout(err error) bool {
+
+	var u *url.Error
+
+	// assert type for error interface
+	u, ok := err.(*url.Error)
+	if !ok {
+		return false
+	}
+
+	return u.Timeout()
 }

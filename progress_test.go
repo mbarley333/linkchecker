@@ -85,7 +85,7 @@ func TestRender(t *testing.T) {
 
 	b.Render()
 
-	want := "\r20.0% complete        20 / 100"
+	want := "20.0% complete        20 / 100\r"
 	got := output.String()
 
 	if want != got {

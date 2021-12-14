@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,8 @@ func call() error {
 	// defer cancel()
 	// req = req.WithContext(ctx)
 	_, err = client.Do(req)
+
+	fmt.Println(err)
 	return err
 }
 

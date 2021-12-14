@@ -13,8 +13,7 @@ type Bar struct {
 	TotalSteps     int
 	CompletedSteps int
 
-	done chan bool
-
+	done   chan struct{}
 	mutex  sync.RWMutex
 	output io.Writer
 }
@@ -30,7 +29,7 @@ func WithOutputBar(output io.Writer) OptionBar {
 
 func NewBar(opts ...OptionBar) *Bar {
 	bar := &Bar{
-		done:   make(chan bool),
+		done:   make(chan struct{}),
 		output: os.Stdout,
 	}
 
@@ -45,14 +44,14 @@ func (b *Bar) Add() {
 
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	b.TotalSteps += 1
+	b.TotalSteps++
 }
 
 func (b *Bar) Completed() {
 
 	b.mutex.Lock()
 	defer b.mutex.Unlock()
-	b.CompletedSteps += 1
+	b.CompletedSteps++
 }
 
 func (b *Bar) GetPercent() float64 {
@@ -67,7 +66,7 @@ func (b *Bar) GetPercent() float64 {
 func (b *Bar) Render() {
 
 	f := b.GetPercent()
-	fmt.Fprintf(b.output, "\r%s%% complete        %d / %d", strconv.FormatFloat(f, 'f', 1, 64), b.CompletedSteps, b.TotalSteps)
+	fmt.Fprintf(b.output, "%s%% complete        %d / %d\r", strconv.FormatFloat(f, 'f', 1, 64), b.CompletedSteps, b.TotalSteps)
 
 }
 
@@ -75,7 +74,7 @@ func (b *Bar) Render() {
 func (b *Bar) Refresher() {
 	for {
 		select {
-		case b.done <- true:
+		case <-b.done:
 			return
 		case <-time.After(100 * time.Millisecond):
 			b.Render()
