@@ -53,7 +53,7 @@ func WithErrorLog(errorLog io.Writer) Option {
 	}
 }
 
-func WithLinkcheckerSpeed(speed string) Option {
+func WithLinkcheckerSpeed(speed CheckSpeed) Option {
 	return func(l *LinkChecker) error {
 		result := GetCheckSpeed(speed)
 		l.ratelimiter = rate.NewLimiter(rate.Limit(result.Rate), result.Burst)
@@ -582,10 +582,30 @@ func (r Result) String() string {
 func RunCLI() {
 
 	flagSet := flag.NewFlagSet("flags", flag.ExitOnError)
-	speed := flagSet.String("speed", "normal", "optional flag to set linkchecker speed.  must select slow, normal, fast, furious or warp if using flag.  defaults to normal speed.")
+	slow := flagSet.Bool("slow", false, "linkchecker rate set to 1 request per second")
+	normal := flagSet.Bool("normal", false, "linkchecker rate set two 2 requests per second")
+	fast := flagSet.Bool("fast", false, "linkchecker rate set to 10 requests per second")
+	furious := flagSet.Bool("furious", false, "linkchecker rate set to 20 requests per second")
+	warp := flagSet.Bool("warp", false, "linkchecker rate set to 100 requests per second")
+
 	flagSet.Parse(os.Args[2:])
 
-	_, ok := CheckSpeedFromStringMap[strings.ToLower(*speed)]
+	var speed CheckSpeed
+
+	if *normal {
+		speed = CheckSpeedNormal
+	} else if *slow {
+		speed = CheckSpeedSlow
+	} else if *fast {
+		speed = CheckSpeedFast
+	} else if *furious {
+		speed = CheckSpeedFurious
+	} else if *warp {
+		speed = CheckSpeedWarp
+	}
+
+	//_, ok := CheckSpeedFromStringMap[strings.ToLower(speed)]
+	_, ok := CheckSpeedMap[speed]
 
 	if len(os.Args) < 2 || !ok {
 		help(os.Args[0])
@@ -601,7 +621,7 @@ func RunCLI() {
 
 	l, err := NewLinkChecker(
 		WithProgressBar(),
-		WithLinkcheckerSpeed(strings.ToLower(*speed)),
+		WithLinkcheckerSpeed(speed),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -667,13 +687,13 @@ const (
 	CheckSpeedWarp
 )
 
-var CheckSpeedFromStringMap = map[string]CheckSpeed{
-	"slow":    CheckSpeedSlow,
-	"normal":  CheckSpeedNormal,
-	"fast":    CheckSpeedFast,
-	"furious": CheckSpeedFurious,
-	"warp":    CheckSpeedWarp,
-}
+// var CheckSpeedFromStringMap = map[string]CheckSpeed{
+// 	"slow":    CheckSpeedSlow,
+// 	"normal":  CheckSpeedNormal,
+// 	"fast":    CheckSpeedFast,
+// 	"furious": CheckSpeedFurious,
+// 	"warp":    CheckSpeedWarp,
+// }
 
 type LinkcheckSpeed struct {
 	Rate  int
@@ -688,8 +708,8 @@ var CheckSpeedMap = map[CheckSpeed]LinkcheckSpeed{
 	CheckSpeedWarp:    {Rate: 100, Burst: 100},
 }
 
-func GetCheckSpeed(speed string) LinkcheckSpeed {
-	return CheckSpeedMap[CheckSpeedFromStringMap[speed]]
+func GetCheckSpeed(speed CheckSpeed) LinkcheckSpeed {
+	return CheckSpeedMap[speed]
 }
 
 func IsTimeout(err error) bool {
