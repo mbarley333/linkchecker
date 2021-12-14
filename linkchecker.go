@@ -208,8 +208,8 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	code, err := l.HeadStatus(site)
 	if err != nil {
 
-		fmt.Printf("%#v", err)
-		if IsTimeout(err) {
+		if os.IsTimeout(err) {
+			//if IsTimeout(err) {
 			result.Problem = "Client.Timeout exceeded while awaiting headers"
 			result.Status = StatusRateLimited
 		} else {
@@ -248,7 +248,8 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 
 	resp, err := l.GetResponse(site)
 	if err != nil {
-		if IsTimeout(err) {
+		//if IsTimeout(err) {
+		if os.IsTimeout(err) {
 			result.Problem = "Client.Timeout exceeded while awaiting headers"
 			result.Status = StatusRateLimited
 		} else {

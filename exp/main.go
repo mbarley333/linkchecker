@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -26,7 +25,6 @@ func call() error {
 	// req = req.WithContext(ctx)
 	_, err = client.Do(req)
 
-	fmt.Println(err)
 	return err
 }
 
@@ -46,7 +44,6 @@ func main() {
 	err := call()
 	if errors.Is(err, context.DeadlineExceeded) {
 		log.Println("ContextDeadlineExceeded: true")
-		log.Println(err)
 	}
 	if os.IsTimeout(err) {
 		log.Println("IsTimeoutError: true")
