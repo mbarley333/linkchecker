@@ -2,6 +2,7 @@ package linkchecker
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -105,7 +106,7 @@ func NewLinkChecker(opts ...Option) (*LinkChecker, error) {
 		output:      os.Stdout,
 		errorLog:    os.Stderr,
 		ratelimiter: rate.NewLimiter(2, 2),
-		results:     make(chan Result, 1000),
+		results:     make(chan Result, 2000),
 		checkLink: CheckLink{
 			list: make(map[string]bool),
 		},
@@ -207,7 +208,18 @@ func (l *LinkChecker) Crawl(site string, referringSite string) {
 	// check head request first
 	code, err := l.HeadStatus(site)
 	if err != nil {
-		fmt.Fprintln(l.errorLog, err)
+
+		if errors.Is(err, context.DeadlineExceeded) {
+			result.Problem = "Client.Timeout exceeded while awaiting headers"
+			result.Status = StatusRateLimited
+		} else {
+			result.Problem = err.Error()
+			result.Status = StatusDown
+		}
+
+		result.ResponseCode = code
+		l.results <- result
+		return
 	}
 
 	if code == http.StatusTooManyRequests {
@@ -335,6 +347,7 @@ func (l *LinkChecker) HeadStatus(link string) (int, error) {
 	if err != nil {
 		fmt.Fprintln(l.errorLog, err)
 	}
+
 	request.Header.Set("user-agent", "linkchecker")
 	request.Header.Set("accept", "*/*")
 
@@ -342,7 +355,6 @@ func (l *LinkChecker) HeadStatus(link string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-
 	defer resp.Body.Close()
 
 	return resp.StatusCode, nil
@@ -625,7 +637,7 @@ func help(cliArg string) {
 	Description:
 	  Linkchecker will crawl a site and return the status of each link on the site. 
 	  Use the optional -speed flag to set linkchecker speed.  Please note that using linkchecker 
-	  may trigger site ratelimiters return error codes in your results.
+	  may trigger site ratelimiters if ratelimter thresholds are exceeded by linkchecker speed settings.
 	
 	Flags:
 	 speed: optional flag to set linkchecker speed.  must select slow, normal, fast, furious or warp if using flag.  defaults to normal speed.

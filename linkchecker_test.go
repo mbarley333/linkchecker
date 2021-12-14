@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -401,4 +402,41 @@ func TestSetCheckSpeed(t *testing.T) {
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
 	}
+}
+
+func TestTimeoutHeadRequest(t *testing.T) {
+	t.Parallel()
+
+	//setup http server for get requests
+	ts := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(1 * time.Second)
+
+	}))
+
+	l, err := linkchecker.NewLinkChecker()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	l.HTTPClient = ts.Client()
+	l.HTTPClient.Timeout = 100 * time.Millisecond
+
+	_ = l.Check(ts.URL)
+
+	want := []linkchecker.Result{
+		{
+			ResponseCode:  0,
+			Url:           ts.URL,
+			ReferringSite: ts.URL,
+			Status:        linkchecker.StatusRateLimited,
+			Problem:       "Client.Timeout exceeded while awaiting headers",
+		},
+	}
+
+	got := l.GetAllResults()
+
+	if !cmp.Equal(want, got) {
+		t.Fatal(cmp.Diff(want, got))
+	}
+
 }
