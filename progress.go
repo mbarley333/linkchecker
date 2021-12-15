@@ -31,7 +31,6 @@ func WithOutputBar(output io.Writer) OptionBar {
 
 func NewBar(opts ...OptionBar) *Bar {
 	bar := &Bar{
-		done:   make(chan struct{}),
 		output: os.Stdout,
 	}
 
