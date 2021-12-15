@@ -626,6 +626,8 @@ func RunCLI() {
 		fmt.Fprintln(os.Stderr, err)
 	}
 
+	l.ProgressBar.ctx, l.ProgressBar.cancel = context.WithCancel(context.Background())
+
 	defer l.elapsed("linkchecker")()
 
 	go l.ProgressBar.Refresher()
@@ -648,8 +650,8 @@ func RunCLI() {
 		fmt.Fprintln(l.errorLog, err)
 	}
 
-	close(l.ProgressBar.done)
-
+	//close(l.ProgressBar.done)
+	l.ProgressBar.cancel()
 }
 
 func help(cliArg string) {
@@ -690,14 +692,6 @@ const (
 	CheckSpeedWarp
 )
 
-// var CheckSpeedFromStringMap = map[string]CheckSpeed{
-// 	"slow":    CheckSpeedSlow,
-// 	"normal":  CheckSpeedNormal,
-// 	"fast":    CheckSpeedFast,
-// 	"furious": CheckSpeedFurious,
-// 	"warp":    CheckSpeedWarp,
-// }
-
 type LinkcheckSpeed struct {
 	Rate  int
 	Burst int
@@ -713,17 +707,4 @@ var CheckSpeedMap = map[CheckSpeed]LinkcheckSpeed{
 
 func GetCheckSpeed(speed CheckSpeed) LinkcheckSpeed {
 	return CheckSpeedMap[speed]
-}
-
-func IsTimeout(err error) bool {
-
-	var u *url.Error
-
-	// assert type for error interface
-	u, ok := err.(*url.Error)
-	if !ok {
-		return false
-	}
-
-	return u.Timeout()
 }

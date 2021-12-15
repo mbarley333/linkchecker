@@ -2,7 +2,6 @@ package linkchecker_test
 
 import (
 	"bytes"
-	"errors"
 	"linkchecker"
 	"net/http"
 	"net/http/httptest"
@@ -440,44 +439,4 @@ func TestTimeoutHeadRequest(t *testing.T) {
 		t.Fatal(cmp.Diff(want, got))
 	}
 
-}
-
-func TestIsTimeout(t *testing.T) {
-	t.Parallel()
-
-	want := false
-	got := linkchecker.IsTimeout(errors.New(""))
-
-	if want != got {
-		t.Fatalf("want: %v, got: %v", want, got)
-	}
-
-}
-
-func TestIsTimeoutTrue(t *testing.T) {
-	t.Parallel()
-
-	err := &url.Error{
-		Err: Faketimeout{},
-	}
-
-	want := true
-	got := linkchecker.IsTimeout(err)
-
-	if want != got {
-		t.Fatalf("want: %v, got: %v", want, got)
-	}
-
-}
-
-type Faketimeout struct{}
-
-func (f Faketimeout) Timeout() bool {
-
-	return true
-}
-
-func (f Faketimeout) Error() string {
-
-	return ""
 }

@@ -1,6 +1,7 @@
 package linkchecker
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,9 @@ import (
 type Bar struct {
 	TotalSteps     int
 	CompletedSteps int
+
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	done   chan struct{}
 	mutex  sync.RWMutex
@@ -59,7 +63,15 @@ func (b *Bar) GetPercent() float64 {
 	b.mutex.RLock()
 	defer b.mutex.RUnlock()
 
-	return 100.0 * float64(b.CompletedSteps) / float64(b.TotalSteps)
+	var result float64
+
+	if b.TotalSteps == 0 {
+		result = 0
+	} else {
+		result = 100.0 * float64(b.CompletedSteps) / float64(b.TotalSteps)
+	}
+
+	return result
 
 }
 
@@ -74,7 +86,9 @@ func (b *Bar) Render() {
 func (b *Bar) Refresher() {
 	for {
 		select {
-		case <-b.done:
+		// case <-b.done:
+		// 	return
+		case <-b.ctx.Done():
 			return
 		case <-time.After(100 * time.Millisecond):
 			b.Render()
