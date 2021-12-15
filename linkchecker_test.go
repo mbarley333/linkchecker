@@ -397,7 +397,7 @@ func TestSetCheckSpeed(t *testing.T) {
 		Rate:  1,
 		Burst: 1,
 	}
-	got := linkchecker.GetCheckSpeed("slow")
+	got := linkchecker.GetCheckSpeed(linkchecker.CheckSpeedSlow)
 
 	if !cmp.Equal(want, got) {
 		t.Fatal(cmp.Diff(want, got))
