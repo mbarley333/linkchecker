@@ -16,7 +16,6 @@ type Bar struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-
 	mutex  sync.RWMutex
 	output io.Writer
 }
