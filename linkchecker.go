@@ -641,7 +641,6 @@ func RunCLI() {
 			} else {
 				fmt.Fprintln(l.output, result)
 			}
-
 		}
 	}()
 
