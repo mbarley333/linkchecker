@@ -292,10 +292,8 @@ func TestCanonicaliseUrl(t *testing.T) {
 		l.Domain = tc.domain
 		got := ""
 		if tc.isParent {
-			got, err = l.CanonicaliseUrl(tc.url)
-			if err != nil {
-				t.Fatal(err)
-			}
+			got = l.CanonicaliseUrl(tc.url)
+
 		} else if !tc.isParent {
 			got, err = l.CanonicaliseChildUrl(tc.url)
 			if err != nil {

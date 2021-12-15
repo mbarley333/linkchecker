@@ -154,10 +154,7 @@ func (l *LinkChecker) Check(site string) error {
 
 	l.Scheme, l.Domain = url.Scheme, url.Host
 
-	canonicalSite, err := l.CanonicaliseUrl(site)
-	if err != nil {
-		return err
-	}
+	canonicalSite := l.CanonicaliseUrl(site)
 
 	referringSite := canonicalSite
 
@@ -408,7 +405,7 @@ func (l *LinkChecker) AddSite(site string) {
 	l.checkLink.list[site] = true
 }
 
-func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
+func (l *LinkChecker) CanonicaliseUrl(site string) string {
 
 	newUrl := strings.TrimSpace(site)
 
@@ -421,8 +418,8 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 			str := []string{scheme, "://", site}
 			newUrl = strings.Join(str, "")
 			code, err := l.HeadStatus(newUrl)
-			if err != nil {
-				fmt.Fprintf(l.errorLog, "unable to use https scheme for %s, %s", site, err)
+			if err != nil && scheme == "http" {
+				fmt.Fprintf(l.errorLog, "https/http schemes not valid for %s, %s", site, err)
 			}
 
 			if code == http.StatusOK {
@@ -437,7 +434,7 @@ func (l *LinkChecker) CanonicaliseUrl(site string) (string, error) {
 
 		}
 	}
-	return newUrl, nil
+	return newUrl
 }
 
 func (l *LinkChecker) CanonicaliseChildUrl(site string) (string, error) {
@@ -621,6 +618,7 @@ func RunCLI() {
 	l, err := NewLinkChecker(
 		WithProgressBar(),
 		WithLinkcheckerSpeed(speed),
+		WithErrorLog(io.Discard),
 	)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
