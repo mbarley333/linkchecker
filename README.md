@@ -82,3 +82,7 @@ curl https://raw.githubusercontent.com/mbarley333/linkchecker/main/install.sh | 
 * Buffered Channel size for results
 * Error log
 * Output
+
+# More stuff
+* Progress bar
+* Colored fonts
